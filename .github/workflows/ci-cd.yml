@@ -296,7 +296,7 @@ jobs:
 
       # GitHub CodeQL — catches injection, XSS, insecure deserialization
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: java, javascript
           queries: security-and-quality
@@ -305,7 +305,7 @@ jobs:
         run: mvn --batch-mode compile -DskipTests --quiet
 
       - name: Run CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:java"
 
@@ -321,7 +321,7 @@ jobs:
           exit-code: 0
 
       - name: Upload Trivy FS results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-fs.sarif
@@ -431,7 +431,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload container scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-image-${{ matrix.service }}.sarif
