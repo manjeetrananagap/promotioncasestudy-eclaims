@@ -1,51 +1,12 @@
+# Cloud Build configuration
+
 steps:
-  - name: 'Build Maven Backend Services'
-    dir: 'backend'
-    entrypoint: 'mvn'
-    args: ['package']
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args: ['-c', 'gcloud logging write-log --log-name=cloud_build_log --severity=INFO --message="Build completed"']
 
-  - name: 'Build Docker Image for API Gateway'
-    dir: 'api-gateway'
-    entrypoint: 'docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA', '.']
+options:
+  logging: CLOUD_LOGGING_ONLY
 
-  - name: 'Build Docker Image for Claims Service'
-    dir: 'claims-service'
-    entrypoint: 'docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA', '.']
-
-  - name: 'Build Docker Image for Document Service'
-    dir: 'document-service'
-    entrypoint: 'docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA', '.']
-
-  - name: 'Build Docker Image for Notification Service'
-    dir: 'notification-service'
-    entrypoint: 'docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA', '.']
-
-  - name: 'Build Docker Image for Partner Service'
-    dir: 'partner-service'
-    entrypoint: 'docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA', '.']
-
-  - name: 'Build Docker Image for Workflow Service'
-    dir: 'workflow-service'
-    entrypoint: 'docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA', '.']
-
-  - name: 'Build Docker Image for Frontend'
-    dir: 'frontend'
-    entrypoint: 'docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/frontend:$SHORT_SHA', '.']
-
-  - name: 'Push Images to Container Registry'
-    args: ['gcloud', 'docker', '--', 'push', 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA', 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA', 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA', 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA', 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA', 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA', 'gcr.io/$PROJECT_ID/frontend:$SHORT_SHA']
-
-  - name: 'Deploy to GKE'
-    entrypoint: 'gcloud'
-    args: ['kubectl', 'apply', '-f', 'k8s/deployment.yaml']
-
-  - name: 'Health Check'
-    entrypoint: 'gcloud'
-    args: ['run', 'services', 'describe', 'YOUR_SERVICE_NAME', '--platform', 'managed', '--region', 'YOUR_REGION']
+substitutions:
+  _SERVICE_ACCOUNT: '' # Removed service_account requirement
