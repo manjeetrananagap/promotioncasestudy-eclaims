@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eclaims
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    team: eclaims
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eclaims-config
+  namespace: eclaims
+data:
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  SPRING_DATASOURCE_USERNAME: "eclaims"
+  KEYCLOAK_ISSUER_URI: "http://keycloak-service:8080/realms/eclaims"
+  MINIO_ENDPOINT: "http://minio-service:9000"
+  ZEEBE_GATEWAY_ADDRESS: "zeebe-service:26500"

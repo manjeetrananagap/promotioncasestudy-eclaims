@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: eclaims-dev
+
+resources:
+  - ../../base
+
+nameSuffix: "-dev"
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+
+images:
+  - name: REGISTRY/eclaims/claims-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/claims-service
+    newTag: dev
+  - name: REGISTRY/eclaims/notification-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/notification-service
+    newTag: dev
+  - name: REGISTRY/eclaims/document-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/document-service
+    newTag: dev
+  - name: REGISTRY/eclaims/partner-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/partner-service
+    newTag: dev
+  - name: REGISTRY/eclaims/workflow-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/workflow-service
+    newTag: dev
+  - name: REGISTRY/eclaims/api-gateway
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/api-gateway
+    newTag: dev
+  - name: REGISTRY/eclaims/frontend
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/frontend
+    newTag: dev

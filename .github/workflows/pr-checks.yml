@@ -1,0 +1,122 @@
+##############################################################################
+# eClaims — PR Validation Workflow
+# Runs fast checks on every pull request — does NOT build Docker images.
+# Gives developers immediate feedback before the full CI pipeline runs.
+##############################################################################
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+    types: [opened, synchronize, reopened]
+
+env:
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+
+jobs:
+  # ── Fast compile check ──────────────────────────────────────────────────────
+  compile:
+    name: ⚡ Compile (fast)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+      - run: mvn --batch-mode --quiet compile -DskipTests
+
+  # ── Unit tests ──────────────────────────────────────────────────────────────
+  unit-tests:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: eclaims
+          POSTGRES_PASSWORD: eclaims_pass
+          POSTGRES_DB: claims_db
+        ports: [5432:5432]
+        options: --health-cmd pg_isready --health-interval 10s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+      - name: Start Kafka
+        run: |
+          docker run -d --name kafka -p 9092:9092 \
+            -e KAFKA_ENABLE_KRAFT=yes \
+            -e KAFKA_CFG_PROCESS_ROLES=broker,controller \
+            -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+            -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+            -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e ALLOW_PLAINTEXT_LISTENER=yes \
+            bitnami/kafka:3.6
+          sleep 8
+      - run: mvn --batch-mode test
+      - name: Report test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: '**/target/surefire-reports/TEST-*.xml'
+
+  # ── Frontend type-check ─────────────────────────────────────────────────────
+  frontend-check:
+    name: 🎨 Frontend Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --silent
+        working-directory: frontend
+      - run: npx tsc --noEmit
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+        env:
+          CI: false
+          REACT_APP_API_URL: http://localhost:8080
+          REACT_APP_KEYCLOAK_URL: http://localhost:8180
+
+  # ── Secret leak scan ────────────────────────────────────────────────────────
+  secret-scan:
+    name: 🔒 Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          extra_args: --only-verified
+
+  # ── PR size labeller ────────────────────────────────────────────────────────
+  label-size:
+    name: 📏 Label PR Size
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: codelytv/pr-size-labeler@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          xs_max_size: 10
+          s_max_size: 100
+          m_max_size: 500
+          l_max_size: 1000

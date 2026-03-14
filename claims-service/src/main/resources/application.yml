@@ -1,0 +1,74 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: claims-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/claims_db
+    username: eclaims
+    password: eclaims_dev_2024
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: ClaimsPool
+      maximum-pool-size: 10
+
+  # Hibernate — DDL managed by Flyway, Hibernate only validates
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc.batch_size: 25
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        spring.json.add.type.headers: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/realms/eclaims
+          jwk-set-uri: http://localhost:8080/realms/eclaims/protocol/openid-connect/certs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,flyway
+  endpoint:
+    health:
+      show-details: always
+
+eclaims:
+  kafka.topics:
+    claim-submitted:  claim.submitted
+    claim-validated:  claim.validated
+    claim-approved:   claim.approved
+    claim-closed:     claim.closed
+    audit-events:     audit.events
+
+logging:
+  level:
+    com.nagarro.eclaims: DEBUG
+    org.hibernate.SQL: DEBUG

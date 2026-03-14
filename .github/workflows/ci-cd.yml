@@ -1,0 +1,821 @@
+##############################################################################
+# eClaims — GitHub Actions CI/CD Pipeline
+# Nagarro Software Pvt. Ltd.
+# Repository: https://github.com/manjeetrananagap/promotioncasestudy-eclaims
+#
+# Triggers:
+#   pull_request → main         : validate + build + test + security
+#   push → main                 : full build + deploy to dev (automatic)
+#   push → release/**           : full build + staging + prod (manual gates)
+#   workflow_dispatch           : manual trigger with environment selection
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   GCP_PROJECT_ID              GCP project ID
+#   GCP_SA_KEY                  Service account JSON key (base64-encoded)
+#   GKE_CLUSTER_NAME            GKE cluster name  (e.g. eclaims-cluster)
+#   GKE_CLUSTER_REGION          GKE region        (e.g. us-central1)
+#   SONAR_TOKEN                 SonarCloud token
+#   SONAR_HOST_URL              SonarQube host    (https://sonarcloud.io)
+#   PROD_API_URL                https://api.eclaims.yourdomain.com
+#   PROD_KEYCLOAK_URL           https://auth.eclaims.yourdomain.com
+#   SLACK_WEBHOOK_URL           Slack incoming webhook URL
+#
+# GitHub Environments to create (Settings → Environments):
+#   development  — no protection rules, auto-deploys
+#   staging      — 1 required reviewer
+#   production   — 2 required reviewers + wait timer 5 min
+##############################################################################
+
+name: eClaims CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [development, staging, production]
+      image_tag:
+        description: Image tag override (leave blank = current SHA)
+        required: false
+
+# Cancel in-progress runs on same branch (except main/release)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains('refs/heads/main refs/heads/release/', github.ref) }}
+
+env:
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+  GCP_REGION: us-central1
+  REGISTRY: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/eclaims
+
+# ════════════════════════════════════════════════════════════════════════════
+# JOB 1 — VALIDATE
+# Fast structural check on every push and PR. No heavy work here.
+# ════════════════════════════════════════════════════════════════════════════
+jobs:
+  validate:
+    name: 🔍 Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Maven validate (no compile, just structure)
+        run: mvn --batch-mode --quiet validate
+
+      - name: Validate Docker Compose file
+        run: docker compose config --quiet
+
+      - name: Validate K8s manifests (kustomize build)
+        run: |
+          curl -sL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          ./kustomize build k8s/overlays/dev   > /dev/null && echo "dev overlay OK"
+          ./kustomize build k8s/overlays/prod  > /dev/null && echo "prod overlay OK"
+
+      - name: Secret leak scan (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 2 — BUILD & UNIT TEST (Java)
+  # ════════════════════════════════════════════════════════════════════════════
+  build-backend:
+    name: 🏗️ Build & Test (Java)
+    runs-on: ubuntu-latest
+    needs: validate
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: eclaims
+          POSTGRES_PASSWORD: eclaims_pass
+          POSTGRES_DB: claims_db
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Start Kafka (KRaft mode — no Zookeeper)
+        run: |
+          docker run -d --name kafka -p 9092:9092 \
+            -e KAFKA_ENABLE_KRAFT=yes \
+            -e KAFKA_CFG_PROCESS_ROLES=broker,controller \
+            -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+            -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+            -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+            -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+            -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e ALLOW_PLAINTEXT_LISTENER=yes \
+            -e KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true \
+            bitnami/kafka:3.6
+          sleep 8
+
+      - name: Build + run unit tests + generate JaCoCo coverage
+        run: |
+          mvn --batch-mode clean verify jacoco:report \
+            -Dspring.datasource.url=jdbc:postgresql://localhost:5432/claims_db \
+            -Dspring.kafka.bootstrap-servers=localhost:9092
+
+      - name: Publish test results as PR check
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          files: '**/target/surefire-reports/TEST-*.xml'
+          comment_title: Unit Test Results
+
+      - name: Upload test results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.run_id }}
+          path: '**/target/surefire-reports/*.xml'
+          retention-days: 30
+
+      - name: Upload JaCoCo coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: '**/target/site/jacoco/jacoco.xml'
+          retention-days: 14
+
+      - name: Package JARs (DskipTests — already ran)
+        run: mvn --batch-mode package -DskipTests --quiet
+
+      - name: Upload packaged JARs
+        uses: actions/upload-artifact@v4
+        with:
+          name: jars-${{ github.run_id }}
+          path: '*/target/*-POC.jar'
+          retention-days: 1
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 3 — BUILD FRONTEND (React + TypeScript)
+  # ════════════════════════════════════════════════════════════════════════════
+  build-frontend:
+    name: 🎨 Build Frontend (React)
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --silent
+
+      - name: TypeScript type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build production bundle
+        working-directory: frontend
+        env:
+          CI: false
+          REACT_APP_API_URL: https://api.eclaims.yourdomain.com
+          REACT_APP_KEYCLOAK_URL: https://auth.eclaims.yourdomain.com
+          REACT_APP_KEYCLOAK_REALM: eclaims
+          REACT_APP_KEYCLOAK_CLIENT: eclaims-frontend
+        run: npm run build
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-${{ github.run_id }}
+          path: frontend/build/
+          retention-days: 1
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 4 — SONARQUBE CODE QUALITY GATE
+  # ════════════════════════════════════════════════════════════════════════════
+  sonarqube:
+    name: 📊 SonarQube
+    runs-on: ubuntu-latest
+    needs: build-backend
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history — needed for SonarQube blame info
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Download JaCoCo reports
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+
+      - name: SonarQube Analysis + Quality Gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN:  ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn --batch-mode sonar:sonar \
+            -Dsonar.projectKey=manjeetrananagap_promotioncasestudy-eclaims \
+            -Dsonar.organization=manjeetrananagap \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.coverage.jacoco.xmlReportPaths=**/target/site/jacoco/jacoco.xml \
+            -Dsonar.exclusions="**/target/**,**/*Test*.java,**/*Config.java"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 5 — SECURITY SCANNING
+  # ════════════════════════════════════════════════════════════════════════════
+  security:
+    name: 🔐 Security Scan
+    runs-on: ubuntu-latest
+    needs: build-backend
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      # OWASP Dependency Check
+      - name: OWASP Dependency Check
+        run: |
+          mvn --batch-mode org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=8 \
+            -DretryFailedAnalysisCount=2
+
+      - name: Upload OWASP report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-${{ github.run_id }}
+          path: '**/target/dependency-check-report.html'
+          retention-days: 30
+
+      # GitHub CodeQL — catches injection, XSS, insecure deserialization
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java, javascript
+          queries: security-and-quality
+
+      - name: Build for CodeQL analysis
+        run: mvn --batch-mode compile -DskipTests --quiet
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java"
+
+      # Trivy filesystem scan
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Upload Trivy FS results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 6 — DOCKER BUILD & PUSH (parallel matrix, 7 services)
+  # Runs only on push to main or release branches (not on PRs)
+  # ════════════════════════════════════════════════════════════════════════════
+  docker-build:
+    name: 🐳 Docker · ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend, security]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-gateway
+            context: ./api-gateway
+            is_frontend: false
+          - service: claims-service
+            context: ./claims-service
+            is_frontend: false
+          - service: notification-service
+            context: ./notification-service
+            is_frontend: false
+          - service: document-service
+            context: ./document-service
+            is_frontend: false
+          - service: partner-service
+            context: ./partner-service
+            is_frontend: false
+          - service: workflow-service
+            context: ./workflow-service
+            is_frontend: false
+          - service: frontend
+            context: ./frontend
+            is_frontend: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for GCP Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Download JARs (backend only)
+        if: ${{ !matrix.is_frontend }}
+        uses: actions/download-artifact@v4
+        with:
+          name: jars-${{ github.run_id }}
+
+      - name: Generate image metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ matrix.service }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.service }}
+            org.opencontainers.image.vendor=Nagarro Software Pvt. Ltd.
+            org.opencontainers.image.source=https://github.com/manjeetrananagap/promotioncasestudy-eclaims
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ matrix.service }}:cache
+          cache-to:   type=registry,ref=${{ env.REGISTRY }}/${{ matrix.service }}:cache,mode=max
+          build-args: |
+            ${{ matrix.is_frontend && format('REACT_APP_API_URL={0}', secrets.PROD_API_URL) || '' }}
+            ${{ matrix.is_frontend && format('REACT_APP_KEYCLOAK_URL={0}', secrets.PROD_KEYCLOAK_URL) || '' }}
+            ${{ matrix.is_frontend && 'REACT_APP_KEYCLOAK_REALM=eclaims' || '' }}
+            ${{ matrix.is_frontend && 'REACT_APP_KEYCLOAK_CLIENT=eclaims-frontend' || '' }}
+          provenance: true
+          sbom: true
+
+      # Scan the built container for vulnerabilities
+      - name: Scan container image — ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          format: sarif
+          output: trivy-image-${{ matrix.service }}.sarif
+          severity: CRITICAL
+          exit-code: 1
+          ignore-unfixed: true
+
+      - name: Upload container scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image-${{ matrix.service }}.sarif
+          category: container-${{ matrix.service }}
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 7 — DEPLOY TO DEV  (auto on every push to main)
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-dev:
+    name: 🚀 Deploy → Dev
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: development
+      url: https://dev.eclaims.yourdomain.com
+    permissions:
+      contents: write   # needed to push kustomization changes back to repo
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER_NAME }}
+          location: ${{ secrets.GKE_CLUSTER_REGION }}
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: '5.3.0'
+
+      - name: Update dev overlay with new image tags
+        run: |
+          TAG="${GITHUB_SHA::8}"
+          cd k8s/overlays/dev
+          kustomize edit set image \
+            "REGISTRY/eclaims/api-gateway=${{ env.REGISTRY }}/api-gateway:${TAG}" \
+            "REGISTRY/eclaims/claims-service=${{ env.REGISTRY }}/claims-service:${TAG}" \
+            "REGISTRY/eclaims/notification-service=${{ env.REGISTRY }}/notification-service:${TAG}" \
+            "REGISTRY/eclaims/document-service=${{ env.REGISTRY }}/document-service:${TAG}" \
+            "REGISTRY/eclaims/partner-service=${{ env.REGISTRY }}/partner-service:${TAG}" \
+            "REGISTRY/eclaims/workflow-service=${{ env.REGISTRY }}/workflow-service:${TAG}" \
+            "REGISTRY/eclaims/frontend=${{ env.REGISTRY }}/frontend:${TAG}"
+
+      - name: Commit updated image tags (ArgoCD GitOps source)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/dev/kustomization.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore(gitops): dev → ${GITHUB_SHA::8} [skip ci]" && \
+            git push origin main
+
+      - name: Apply manifests to GKE dev namespace
+        run: kustomize build k8s/overlays/dev | kubectl apply -f -
+
+      - name: Wait for all deployments to roll out
+        run: |
+          NAMESPACE=eclaims-dev
+          TIMEOUT=180s
+          for svc in api-gateway claims-service notification-service \
+                     document-service partner-service workflow-service frontend; do
+            echo "⏳ Waiting: $svc..."
+            kubectl rollout status deployment/$svc -n $NAMESPACE --timeout=$TIMEOUT
+            echo "✅ $svc ready"
+          done
+
+      - name: Dev smoke test (health checks)
+        run: |
+          for port_path in "8080/actuator/health" "8081/actuator/health" "8084/actuator/health"; do
+            svc=$(echo $port_path | cut -d/ -f1)
+            path=$(echo $port_path | cut -d/ -f2-)
+            STATUS=$(kubectl exec -n eclaims-dev deploy/api-gateway -- \
+              wget -qO- http://localhost:$port_path 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','UNKNOWN'))" 2>/dev/null || echo "SKIPPED")
+            echo "  $svc health: $STATUS"
+          done
+
+      - name: Notify Slack — Dev deployed
+        if: always()
+        uses: slackapi/slack-github-action@v1.25.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ job.status == 'success' && '✅' || '❌' }} *eClaims Dev Deployed* — `${{ github.sha }}`\n*By:* ${{ github.actor }}  |  *Branch:* `${{ github.ref_name }}`\n*Commit:* ${{ github.event.head_commit.message }}\n*URL:* https://dev.eclaims.yourdomain.com"
+                  }
+                }
+              ]
+            }
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 8 — INTEGRATION TESTS (against dev)
+  # ════════════════════════════════════════════════════════════════════════════
+  integration-tests:
+    name: 🧪 Integration Tests
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Run Testcontainers integration suite
+        run: |
+          mvn --batch-mode verify -Pintegration \
+            -Dtest.env=dev \
+            -DfailIfNoTests=false
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-results-${{ github.run_id }}
+          path: '**/target/failsafe-reports/*.xml'
+          retention-days: 30
+
+      - name: Publish integration test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: '**/target/failsafe-reports/TEST-*.xml'
+          comment_title: Integration Test Results
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 9 — DEPLOY TO STAGING  (manual approval via GitHub Environment)
+  # Configure: Settings → Environments → staging → Required reviewers: 1
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-staging:
+    name: 🚀 Deploy → Staging
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    environment:
+      name: staging
+      url: https://staging.eclaims.yourdomain.com
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER_NAME }}
+          location: ${{ secrets.GKE_CLUSTER_REGION }}
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: '5.3.0'
+
+      - name: Update staging overlay and deploy
+        run: |
+          TAG="${GITHUB_SHA::8}"
+          cd k8s/overlays/staging
+          kustomize edit set image \
+            "REGISTRY/eclaims/api-gateway=${{ env.REGISTRY }}/api-gateway:${TAG}" \
+            "REGISTRY/eclaims/claims-service=${{ env.REGISTRY }}/claims-service:${TAG}" \
+            "REGISTRY/eclaims/notification-service=${{ env.REGISTRY }}/notification-service:${TAG}" \
+            "REGISTRY/eclaims/document-service=${{ env.REGISTRY }}/document-service:${TAG}" \
+            "REGISTRY/eclaims/partner-service=${{ env.REGISTRY }}/partner-service:${TAG}" \
+            "REGISTRY/eclaims/workflow-service=${{ env.REGISTRY }}/workflow-service:${TAG}" \
+            "REGISTRY/eclaims/frontend=${{ env.REGISTRY }}/frontend:${TAG}"
+          kustomize build . | kubectl apply -f -
+
+      - name: Wait for staging rollouts
+        run: |
+          for svc in api-gateway claims-service notification-service \
+                     document-service partner-service workflow-service frontend; do
+            kubectl rollout status deployment/$svc -n eclaims-staging --timeout=300s
+          done
+
+      - name: Commit staging image tags
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/staging/kustomization.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore(gitops): staging → ${GITHUB_SHA::8} [skip ci]" && \
+            git push origin HEAD
+
+      - name: Notify Slack — Staging deployed
+        if: always()
+        uses: slackapi/slack-github-action@v1.25.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        with:
+          payload: |
+            {
+              "blocks": [{
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${{ job.status == 'success' && '✅' || '❌' }} *eClaims Staging* — `${{ github.sha }}`\n*URL:* https://staging.eclaims.yourdomain.com\n*Next step:* Approve production deploy in GitHub Actions"
+                }
+              }]
+            }
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 10 — DEPLOY TO PRODUCTION  (manual approval, release branches only)
+  # Configure: Settings → Environments → production
+  #   Required reviewers: 2
+  #   Wait timer: 5 minutes
+  #   Deployment branches: release/**
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-production:
+    name: 🚀 Deploy → Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: startsWith(github.ref, 'refs/heads/release/')
+    environment:
+      name: production
+      url: https://eclaims.yourdomain.com
+    permissions:
+      contents: write
+      deployments: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER_NAME }}
+          location: ${{ secrets.GKE_CLUSTER_REGION }}
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: '5.3.0'
+
+      - name: Update prod overlay image tags
+        run: |
+          TAG="${GITHUB_SHA::8}"
+          cd k8s/overlays/prod
+          kustomize edit set image \
+            "REGISTRY/eclaims/api-gateway=${{ env.REGISTRY }}/api-gateway:${TAG}" \
+            "REGISTRY/eclaims/claims-service=${{ env.REGISTRY }}/claims-service:${TAG}" \
+            "REGISTRY/eclaims/notification-service=${{ env.REGISTRY }}/notification-service:${TAG}" \
+            "REGISTRY/eclaims/document-service=${{ env.REGISTRY }}/document-service:${TAG}" \
+            "REGISTRY/eclaims/partner-service=${{ env.REGISTRY }}/partner-service:${TAG}" \
+            "REGISTRY/eclaims/workflow-service=${{ env.REGISTRY }}/workflow-service:${TAG}" \
+            "REGISTRY/eclaims/frontend=${{ env.REGISTRY }}/frontend:${TAG}"
+
+      - name: Deploy to production (rolling update)
+        run: kustomize build k8s/overlays/prod | kubectl apply -f -
+
+      - name: Wait for production rollouts
+        run: |
+          for svc in api-gateway claims-service notification-service \
+                     document-service partner-service workflow-service frontend; do
+            echo "⏳ Waiting: $svc in production..."
+            kubectl rollout status deployment/$svc -n eclaims --timeout=300s
+            echo "✅ $svc live"
+          done
+
+      - name: Production smoke test
+        run: |
+          echo "Smoke testing production endpoints..."
+          curl -sf --max-time 10 https://eclaims.yourdomain.com/actuator/health | \
+            python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'UP', f'Health FAILED: {d}'
+          print('✅ Production health: UP')
+          "
+
+      - name: Commit prod image tags (GitOps audit trail)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/prod/kustomization.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore(gitops): production → ${GITHUB_SHA::8} [skip ci]" && \
+            git push origin HEAD
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "Release v${{ github.run_number }}"
+          generate_release_notes: true
+          body: |
+            ## eClaims — Production Release v${{ github.run_number }}
+            **Commit:** `${{ github.sha }}`
+            **Branch:** `${{ github.ref_name }}`
+            **Deployed by:** ${{ github.actor }}
+
+            ### Docker Images
+            | Service | Tag |
+            |---------|-----|
+            | api-gateway | `${{ github.sha }}` |
+            | claims-service | `${{ github.sha }}` |
+            | notification-service | `${{ github.sha }}` |
+            | document-service | `${{ github.sha }}` |
+            | partner-service | `${{ github.sha }}` |
+            | workflow-service | `${{ github.sha }}` |
+            | frontend | `${{ github.sha }}` |
+
+            ### Environments
+            | Environment | URL |
+            |-------------|-----|
+            | Production | https://eclaims.yourdomain.com |
+            | Staging | https://staging.eclaims.yourdomain.com |
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Slack — Production deployed
+        if: always()
+        uses: slackapi/slack-github-action@v1.25.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ job.status == 'success' && '🚀' || '🔥' }} *eClaims PRODUCTION* — Release v${{ github.run_number }}\n*Commit:* `${{ github.sha }}`  |  *Deployed by:* ${{ github.actor }}\n*URL:* https://eclaims.yourdomain.com"
+                  }
+                }
+              ]
+            }
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # JOB 11 — DEPENDABOT AUTO-APPROVE + MERGE (dependency updates only)
+  # ════════════════════════════════════════════════════════════════════════════
+  dependabot-auto-merge:
+    name: 🤖 Dependabot Auto-merge
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: github.actor == 'dependabot[bot]' && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Auto-approve Dependabot PR
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge patch and minor updates
+        uses: fastify/github-action-merge-dependabot@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          merge-method: squash
+          target: minor

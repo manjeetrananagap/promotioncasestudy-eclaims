@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  xmlns:modeler="http://camunda.org/schema/modeler/1.0"
+                  id="Definitions_1"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  modeler:executionPlatform="Camunda Cloud"
+                  modeler:executionPlatformVersion="8.4.0">
+
+  <bpmn:process id="eclaims-claim-lifecycle" name="eClaims Claim Lifecycle" isExecutable="true">
+
+    <!-- START: Claim Submitted -->
+    <bpmn:startEvent id="StartEvent_ClaimSubmitted" name="Claim Submitted">
+      <bpmn:outgoing>Flow_to_ValidateClaim</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- TASK 1: Validate Claim -->
+    <bpmn:serviceTask id="Task_ValidateClaim" name="Validate Claim">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="validate-claim" retries="3"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_to_ValidateClaim</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_AssignSurveyor</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- TASK 2: Auto-Assign Surveyor (geo-intelligence) -->
+    <bpmn:serviceTask id="Task_AutoAssignSurveyor" name="Auto-Assign Surveyor">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="auto-assign-surveyor" retries="3"/>
+        <zeebe:taskHeaders>
+          <zeebe:header key="radiusKm" value="25"/>
+          <zeebe:header key="fallbackRadiusKm" value="50"/>
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_to_AssignSurveyor</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_SurveyorAssessment</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- TASK 3: Surveyor Assessment (User Task with 72h timer) -->
+    <bpmn:userTask id="Task_SurveyorAssessment" name="Surveyor Assessment">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition assignee="=surveyorId"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_to_SurveyorAssessment</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_SurveyorGateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Boundary Timer: 72h escalation on surveyor task -->
+    <bpmn:boundaryEvent id="Timer_SurveyorEscalation" attachedToRef="Task_SurveyorAssessment"
+                        cancelActivity="false" name="72h Escalation">
+      <bpmn:timerEventDefinition id="TimerDef_Surveyor">
+        <bpmn:timeDuration>PT72H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+      <bpmn:outgoing>Flow_to_EscalateSurveyor</bpmn:outgoing>
+    </bpmn:boundaryEvent>
+
+    <!-- TASK: Escalate Surveyor -->
+    <bpmn:serviceTask id="Task_EscalateSurveyor" name="Escalate: Notify Case Manager">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="escalate-surveyor" retries="3"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_to_EscalateSurveyor</bpmn:incoming>
+    </bpmn:serviceTask>
+
+    <!-- GATEWAY: Assessment submitted? -->
+    <bpmn:exclusiveGateway id="Gateway_AssessmentSubmitted" name="Assessment Valid?">
+      <bpmn:incoming>Flow_to_SurveyorGateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_AssessmentValid</bpmn:outgoing>
+      <bpmn:outgoing>Flow_AssessmentInvalid</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- TASK 4: Adjustor Review (User Task with 48h timer) -->
+    <bpmn:userTask id="Task_AdjustorReview" name="Adjustor Review">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition assignee="=adjustorId"
+                                    candidateGroups="adjustors"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_AssessmentValid</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_ApprovalGateway</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Boundary Timer: 48h escalation on adjustor task -->
+    <bpmn:boundaryEvent id="Timer_AdjustorEscalation" attachedToRef="Task_AdjustorReview"
+                        cancelActivity="false" name="48h Escalation">
+      <bpmn:timerEventDefinition id="TimerDef_Adjustor">
+        <bpmn:timeDuration>PT48H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+      <bpmn:outgoing>Flow_to_EscalateAdjustor</bpmn:outgoing>
+    </bpmn:boundaryEvent>
+
+    <!-- TASK: Escalate Adjustor -->
+    <bpmn:serviceTask id="Task_EscalateAdjustor" name="Escalate: Notify Case Manager">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="escalate-adjustor" retries="3"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_to_EscalateAdjustor</bpmn:incoming>
+    </bpmn:serviceTask>
+
+    <!-- GATEWAY: Approved or Rejected? -->
+    <bpmn:exclusiveGateway id="Gateway_ApprovalDecision" name="Claim Approved?">
+      <bpmn:incoming>Flow_to_ApprovalGateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_ClaimApproved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ClaimRejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- TASK 5: Assign Workshop (geo-based) -->
+    <bpmn:serviceTask id="Task_AssignWorkshop" name="Assign Workshop">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="assign-workshop" retries="3"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ClaimApproved</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_RepairTracking</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- TASK 6: Repair Tracking (Wait for repair.completed event) -->
+    <bpmn:intermediateCatchEvent id="Event_WaitForRepair" name="Wait: Repair Completed">
+      <bpmn:incoming>Flow_to_RepairTracking</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_Payment</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MsgDef_RepairCompleted"
+                                    messageRef="Message_RepairCompleted"/>
+    </bpmn:intermediateCatchEvent>
+
+    <!-- TASK 7: Process Payment -->
+    <bpmn:serviceTask id="Task_ProcessPayment" name="Process Payment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="process-payment" retries="3"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_to_Payment</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_CloseClaim</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- TASK 8: Close Claim -->
+    <bpmn:serviceTask id="Task_CloseClaim" name="Close Claim">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="close-claim" retries="3"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_to_CloseClaim</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- END: Claim Closed -->
+    <bpmn:endEvent id="EndEvent_ClaimClosed" name="Claim Closed">
+      <bpmn:incoming>Flow_to_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- END: Claim Rejected -->
+    <bpmn:endEvent id="EndEvent_ClaimRejected" name="Claim Rejected">
+      <bpmn:incoming>Flow_ClaimRejected</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- SEQUENCE FLOWS -->
+    <bpmn:sequenceFlow id="Flow_to_ValidateClaim" sourceRef="StartEvent_ClaimSubmitted" targetRef="Task_ValidateClaim"/>
+    <bpmn:sequenceFlow id="Flow_to_AssignSurveyor" sourceRef="Task_ValidateClaim" targetRef="Task_AutoAssignSurveyor"/>
+    <bpmn:sequenceFlow id="Flow_to_SurveyorAssessment" sourceRef="Task_AutoAssignSurveyor" targetRef="Task_SurveyorAssessment"/>
+    <bpmn:sequenceFlow id="Flow_to_EscalateSurveyor" sourceRef="Timer_SurveyorEscalation" targetRef="Task_EscalateSurveyor"/>
+    <bpmn:sequenceFlow id="Flow_to_SurveyorGateway" sourceRef="Task_SurveyorAssessment" targetRef="Gateway_AssessmentSubmitted"/>
+    <bpmn:sequenceFlow id="Flow_AssessmentValid" name="Valid" sourceRef="Gateway_AssessmentSubmitted" targetRef="Task_AdjustorReview">
+      <bpmn:conditionExpression>=assessmentValid = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_AssessmentInvalid" name="Invalid" sourceRef="Gateway_AssessmentSubmitted" targetRef="Task_AutoAssignSurveyor"/>
+    <bpmn:sequenceFlow id="Flow_to_EscalateAdjustor" sourceRef="Timer_AdjustorEscalation" targetRef="Task_EscalateAdjustor"/>
+    <bpmn:sequenceFlow id="Flow_to_ApprovalGateway" sourceRef="Task_AdjustorReview" targetRef="Gateway_ApprovalDecision"/>
+    <bpmn:sequenceFlow id="Flow_ClaimApproved" name="Approved" sourceRef="Gateway_ApprovalDecision" targetRef="Task_AssignWorkshop">
+      <bpmn:conditionExpression>=approved = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ClaimRejected" name="Rejected" sourceRef="Gateway_ApprovalDecision" targetRef="EndEvent_ClaimRejected"/>
+    <bpmn:sequenceFlow id="Flow_to_RepairTracking" sourceRef="Task_AssignWorkshop" targetRef="Event_WaitForRepair"/>
+    <bpmn:sequenceFlow id="Flow_to_Payment" sourceRef="Event_WaitForRepair" targetRef="Task_ProcessPayment"/>
+    <bpmn:sequenceFlow id="Flow_to_CloseClaim" sourceRef="Task_ProcessPayment" targetRef="Task_CloseClaim"/>
+    <bpmn:sequenceFlow id="Flow_to_End" sourceRef="Task_CloseClaim" targetRef="EndEvent_ClaimClosed"/>
+  </bpmn:process>
+
+  <bpmn:message id="Message_RepairCompleted" name="repairCompleted">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=claimId"/>
+    </bpmn:extensionElements>
+  </bpmn:message>
+
+</bpmn:definitions>

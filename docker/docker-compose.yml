@@ -1,0 +1,216 @@
+# =============================================================================
+# eClaims POC — Local Development Infrastructure
+# =============================================================================
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Reset:  docker compose down -v   (wipes all data)
+#
+# Service URLs after startup:
+#   Keycloak Admin → http://localhost:8080/admin         (admin / admin)
+#   Kafka UI       → http://localhost:8090
+#   MinIO Console  → http://localhost:9001               (minioadmin / minioadmin)
+#   Mailhog        → http://localhost:8025
+#   PostgreSQL     → localhost:5432                      (eclaims / eclaims_dev_2024)
+# =============================================================================
+
+version: "3.9"
+
+networks:
+  eclaims-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  kafka_data:
+
+services:
+
+  # ── ZOOKEEPER ─────────────────────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: eclaims-zookeeper
+    networks: [eclaims-net]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── KAFKA ──────────────────────────────────────────────────────────────────
+  # PLAINTEXT_HOST listener → host machine access on localhost:9092
+  # PLAINTEXT listener     → container-to-container on kafka:29092
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: eclaims-kafka
+    networks: [eclaims-net]
+    ports:
+      - "9092:9092"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── KAFKA TOPIC INIT ───────────────────────────────────────────────────────
+  # Creates all 11 eClaims topics with 3 partitions after Kafka is healthy.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: eclaims-kafka-init
+    networks: [eclaims-net]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Creating eClaims Kafka topics..."
+        for topic in claim.submitted claim.validated surveyor.assigned \
+          assessment.submitted claim.approved workshop.assigned \
+          repair.status.updated repair.completed payment.processed \
+          claim.closed audit.events; do
+          kafka-topics --bootstrap-server kafka:29092 \
+            --create --if-not-exists \
+            --topic $$topic --partitions 3 --replication-factor 1
+          echo "  Created: $$topic"
+        done
+        echo "All 11 topics ready."
+
+  # ── KAFKA UI ───────────────────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: eclaims-kafka-ui
+    networks: [eclaims-net]
+    ports:
+      - "8090:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: eclaims-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  # ── POSTGRESQL ─────────────────────────────────────────────────────────────
+  # Single instance for POC — init script creates per-service databases.
+  # Tables are created by each service's Flyway migration on first startup.
+  postgres:
+    image: postgres:15-alpine
+    container_name: eclaims-postgres
+    networks: [eclaims-net]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: eclaims
+      POSTGRES_PASSWORD: eclaims_dev_2024
+      POSTGRES_DB: claims_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eclaims -d claims_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── KEYCLOAK ───────────────────────────────────────────────────────────────
+  # Auto-imports eclaims realm from realm-export.json on first boot.
+  # 4 test users created: customer1, surveyor1, adjustor1, casemanager1
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: eclaims-keycloak
+    networks: [eclaims-net]
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: eclaims
+      KC_DB_PASSWORD: eclaims_dev_2024
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    command: ["start-dev", "--import-realm"]
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ── MINIO ──────────────────────────────────────────────────────────────────
+  # S3-compatible object storage. Documents stored in 3 buckets:
+  #   eclaims-documents  (policies, RC, etc.)
+  #   eclaims-photos     (accident & damage photos)
+  #   eclaims-reports    (assessment reports, invoices)
+  minio:
+    image: minio/minio:latest
+    container_name: eclaims-minio
+    networks: [eclaims-net]
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Web console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MINIO BUCKET INIT ─────────────────────────────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: eclaims-minio-init
+    networks: [eclaims-net]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set local http://minio:9000 minioadmin minioadmin
+        mc mb --ignore-existing local/eclaims-documents
+        mc mb --ignore-existing local/eclaims-photos
+        mc mb --ignore-existing local/eclaims-reports
+        echo "MinIO buckets ready."
+
+  # ── MAILHOG ────────────────────────────────────────────────────────────────
+  # Catches all SMTP emails from Notification Service.
+  # View inbox at http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: eclaims-mailhog
+    networks: [eclaims-net]
+    ports:
+      - "1025:1025"    # SMTP
+      - "8025:8025"    # Web UI

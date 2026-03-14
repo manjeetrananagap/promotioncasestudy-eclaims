@@ -1,0 +1,38 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8080']
+    metrics_path: /actuator/prometheus
+
+  - job_name: 'claims-service'
+    static_configs:
+      - targets: ['claims-service:8081']
+    metrics_path: /actuator/prometheus
+
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:8082']
+    metrics_path: /actuator/prometheus
+
+  - job_name: 'document-service'
+    static_configs:
+      - targets: ['document-service:8083']
+    metrics_path: /actuator/prometheus
+
+  - job_name: 'partner-service'
+    static_configs:
+      - targets: ['partner-service:8084']
+    metrics_path: /actuator/prometheus
+
+  - job_name: 'workflow-service'
+    static_configs:
+      - targets: ['workflow-service:8085']
+    metrics_path: /actuator/prometheus
+
+  - job_name: 'zeebe'
+    static_configs:
+      - targets: ['zeebe:9600']

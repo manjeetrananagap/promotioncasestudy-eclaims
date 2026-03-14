@@ -1,0 +1,110 @@
+# ── Ingress (GKE Cloud Load Balancer + Cloud Armor WAF) ─────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eclaims-ingress
+  namespace: eclaims
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.allow-http: "false"
+    networking.gke.io/managed-certificates: eclaims-ssl-cert
+    networking.gke.io/v1beta1.FrontendConfig: eclaims-frontend-config
+spec:
+  rules:
+    - host: eclaims.yourdomain.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+---
+# ── Managed SSL Certificate ──────────────────────────────────────────────────
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: eclaims-ssl-cert
+  namespace: eclaims
+spec:
+  domains:
+    - eclaims.yourdomain.com
+---
+# ── Frontend Config (HTTPS redirect + Cloud Armor) ───────────────────────────
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: eclaims-frontend-config
+  namespace: eclaims
+spec:
+  redirectToHttps:
+    enabled: true
+  sslPolicy: eclaims-ssl-policy
+---
+# ── Service Account (Workload Identity) ──────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eclaims-sa
+  namespace: eclaims
+  annotations:
+    iam.gke.io/gcp-service-account: eclaims-workload@PROJECT_ID.iam.gserviceaccount.com
+---
+# ── RBAC: Role for service account ───────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eclaims-role
+  namespace: eclaims
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eclaims-rolebinding
+  namespace: eclaims
+subjects:
+  - kind: ServiceAccount
+    name: eclaims-sa
+    namespace: eclaims
+roleRef:
+  kind: Role
+  name: eclaims-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# ── Secrets Template (fill with actual values via Secret Manager in CI/CD) ───
+# DO NOT commit actual secret values — use GCP Secret Manager + Workload Identity
+apiVersion: v1
+kind: Secret
+metadata:
+  name: eclaims-db-secret
+  namespace: eclaims
+type: Opaque
+data:
+  # base64 encoded — replace with actual value from Secret Manager
+  password: REPLACE_WITH_BASE64_DB_PASSWORD
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: eclaims-minio-secret
+  namespace: eclaims
+type: Opaque
+data:
+  access-key: REPLACE_WITH_BASE64_MINIO_KEY
+  secret-key: REPLACE_WITH_BASE64_MINIO_SECRET

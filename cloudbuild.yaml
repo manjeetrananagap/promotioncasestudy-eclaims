@@ -1,0 +1,242 @@
+##############################################################################
+# eClaims — Google Cloud Build Pipeline
+# Nagarro Software Pvt. Ltd.
+#
+# Triggered by: Cloud Build Trigger on push to main/release branches
+# Deploys to:   GKE Autopilot via Cloud Deploy + ArgoCD
+##############################################################################
+
+steps:
+
+# ── Step 1: Maven Build + Tests ──────────────────────────────────────────────
+- name: 'maven:3.9-eclipse-temurin-17'
+  id: 'maven-build'
+  entrypoint: 'mvn'
+  args:
+    - 'clean'
+    - 'package'
+    - '-DskipTests=false'
+    - '--batch-mode'
+    - '--errors'
+  volumes:
+    - name: 'm2-cache'
+      path: '/root/.m2'
+
+# ── Step 2: Build Docker images (parallel) ───────────────────────────────────
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-claims'
+  args:
+    - 'build'
+    - '--tag=${_REGISTRY}/claims-service:$SHORT_SHA'
+    - '--tag=${_REGISTRY}/claims-service:latest'
+    - '--cache-from=${_REGISTRY}/claims-service:latest'
+    - '--build-arg=BUILDKIT_INLINE_CACHE=1'
+    - './claims-service'
+  waitFor: ['maven-build']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-notification'
+  args:
+    - 'build'
+    - '--tag=${_REGISTRY}/notification-service:$SHORT_SHA'
+    - '--tag=${_REGISTRY}/notification-service:latest'
+    - './notification-service'
+  waitFor: ['maven-build']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-document'
+  args:
+    - 'build'
+    - '--tag=${_REGISTRY}/document-service:$SHORT_SHA'
+    - '--tag=${_REGISTRY}/document-service:latest'
+    - './document-service'
+  waitFor: ['maven-build']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-partner'
+  args:
+    - 'build'
+    - '--tag=${_REGISTRY}/partner-service:$SHORT_SHA'
+    - '--tag=${_REGISTRY}/partner-service:latest'
+    - './partner-service'
+  waitFor: ['maven-build']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-workflow'
+  args:
+    - 'build'
+    - '--tag=${_REGISTRY}/workflow-service:$SHORT_SHA'
+    - '--tag=${_REGISTRY}/workflow-service:latest'
+    - './workflow-service'
+  waitFor: ['maven-build']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-gateway'
+  args:
+    - 'build'
+    - '--tag=${_REGISTRY}/api-gateway:$SHORT_SHA'
+    - '--tag=${_REGISTRY}/api-gateway:latest'
+    - './api-gateway'
+  waitFor: ['maven-build']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-frontend'
+  args:
+    - 'build'
+    - '--tag=${_REGISTRY}/frontend:$SHORT_SHA'
+    - '--tag=${_REGISTRY}/frontend:latest'
+    - '--build-arg=REACT_APP_API_URL=${_API_URL}'
+    - '--build-arg=REACT_APP_KEYCLOAK_URL=${_KEYCLOAK_URL}'
+    - '--build-arg=REACT_APP_KEYCLOAK_REALM=eclaims'
+    - '--build-arg=REACT_APP_KEYCLOAK_CLIENT=eclaims-frontend'
+    - './frontend'
+  waitFor: ['-']  # Can start immediately
+
+# ── Step 3: Security scan with Container Analysis ────────────────────────────
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  id: 'security-scan'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      gcloud artifacts docker images scan \
+        ${_REGISTRY}/claims-service:$SHORT_SHA \
+        --format="json" > /workspace/scan-results.json
+      # Fail build if CRITICAL vulnerabilities found
+      CRITICAL=$(cat /workspace/scan-results.json | python3 -c "
+      import json,sys
+      data=json.load(sys.stdin)
+      print(sum(1 for v in data.get('response',{}).get('vulnerabilities',[]) if v.get('severity')=='CRITICAL'))
+      ")
+      echo "Critical vulnerabilities: $CRITICAL"
+      [ "$CRITICAL" -lt 1 ] || exit 1
+  waitFor: ['build-claims']
+
+# ── Step 4: Push all images ───────────────────────────────────────────────────
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-claims'
+  args: ['push', '--all-tags', '${_REGISTRY}/claims-service']
+  waitFor: ['security-scan']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-notification'
+  args: ['push', '--all-tags', '${_REGISTRY}/notification-service']
+  waitFor: ['build-notification']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-document'
+  args: ['push', '--all-tags', '${_REGISTRY}/document-service']
+  waitFor: ['build-document']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-partner'
+  args: ['push', '--all-tags', '${_REGISTRY}/partner-service']
+  waitFor: ['build-partner']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-workflow'
+  args: ['push', '--all-tags', '${_REGISTRY}/workflow-service']
+  waitFor: ['build-workflow']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-gateway'
+  args: ['push', '--all-tags', '${_REGISTRY}/api-gateway']
+  waitFor: ['build-gateway']
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-frontend'
+  args: ['push', '--all-tags', '${_REGISTRY}/frontend']
+  waitFor: ['build-frontend']
+
+# ── Step 5: Update Kustomize overlay with new image tags ─────────────────────
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  id: 'update-k8s-manifests'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      # Install kustomize
+      curl -sL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+      mv kustomize /usr/local/bin/
+
+      # Update image tags for dev overlay
+      cd k8s/overlays/dev
+      kustomize edit set image \
+        "REGISTRY/eclaims/claims-service=${_REGISTRY}/claims-service:$SHORT_SHA" \
+        "REGISTRY/eclaims/notification-service=${_REGISTRY}/notification-service:$SHORT_SHA" \
+        "REGISTRY/eclaims/document-service=${_REGISTRY}/document-service:$SHORT_SHA" \
+        "REGISTRY/eclaims/partner-service=${_REGISTRY}/partner-service:$SHORT_SHA" \
+        "REGISTRY/eclaims/workflow-service=${_REGISTRY}/workflow-service:$SHORT_SHA" \
+        "REGISTRY/eclaims/api-gateway=${_REGISTRY}/api-gateway:$SHORT_SHA" \
+        "REGISTRY/eclaims/frontend=${_REGISTRY}/frontend:$SHORT_SHA"
+  waitFor:
+    - 'push-claims'
+    - 'push-notification'
+    - 'push-document'
+    - 'push-partner'
+    - 'push-workflow'
+    - 'push-gateway'
+    - 'push-frontend'
+
+# ── Step 6: Deploy to GKE dev via kubectl ────────────────────────────────────
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  id: 'deploy-dev'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      gcloud container clusters get-credentials ${_GKE_CLUSTER} \
+        --region ${_GCP_REGION} --project ${PROJECT_ID}
+
+      cd k8s/overlays/dev
+      kustomize build . | kubectl apply -f -
+
+      # Wait for rollouts
+      kubectl rollout status deployment/claims-service    -n eclaims-dev --timeout=180s
+      kubectl rollout status deployment/notification-service -n eclaims-dev --timeout=180s
+      kubectl rollout status deployment/api-gateway       -n eclaims-dev --timeout=120s
+      kubectl rollout status deployment/frontend          -n eclaims-dev --timeout=120s
+
+      echo "✅ Dev deployment complete: $SHORT_SHA"
+  waitFor: ['update-k8s-manifests']
+
+# ── Step 7: Create Cloud Deploy release (triggers staging pipeline) ──────────
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  id: 'create-cloud-deploy-release'
+  entrypoint: 'gcloud'
+  args:
+    - 'deploy'
+    - 'releases'
+    - 'create'
+    - 'eclaims-release-$SHORT_SHA'
+    - '--delivery-pipeline=eclaims-pipeline'
+    - '--region=${_GCP_REGION}'
+    - '--images=claims-service=${_REGISTRY}/claims-service:$SHORT_SHA,notification-service=${_REGISTRY}/notification-service:$SHORT_SHA'
+    - '--description=Automated release from Cloud Build $SHORT_SHA'
+  waitFor: ['deploy-dev']
+
+# ── Substitutions ─────────────────────────────────────────────────────────────
+substitutions:
+  _REGISTRY: 'us-central1-docker.pkg.dev/${PROJECT_ID}/eclaims'
+  _GCP_REGION: 'us-central1'
+  _GKE_CLUSTER: 'eclaims-cluster'
+  _API_URL: 'https://api.eclaims.yourdomain.com'
+  _KEYCLOAK_URL: 'https://auth.eclaims.yourdomain.com'
+
+# ── Options ───────────────────────────────────────────────────────────────────
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+  env:
+    - 'DOCKER_BUILDKIT=1'
+
+images:
+  - '${_REGISTRY}/claims-service:$SHORT_SHA'
+  - '${_REGISTRY}/notification-service:$SHORT_SHA'
+  - '${_REGISTRY}/document-service:$SHORT_SHA'
+  - '${_REGISTRY}/partner-service:$SHORT_SHA'
+  - '${_REGISTRY}/workflow-service:$SHORT_SHA'
+  - '${_REGISTRY}/api-gateway:$SHORT_SHA'
+  - '${_REGISTRY}/frontend:$SHORT_SHA'
+
+timeout: '1800s'

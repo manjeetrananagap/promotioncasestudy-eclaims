@@ -1,0 +1,76 @@
+{
+  "id": "eclaims",
+  "realm": "eclaims",
+  "displayName": "eClaims",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 3600,
+  "roles": {
+    "realm": [
+      { "name": "CUSTOMER",         "description": "Insurance policy holder" },
+      { "name": "SURVEYOR",         "description": "Field damage assessor" },
+      { "name": "ADJUSTOR",         "description": "Claim approval officer" },
+      { "name": "CASE_MANAGER",     "description": "Supervisory oversight" },
+      { "name": "WORKSHOP_PARTNER", "description": "Repair workshop access" },
+      { "name": "AUDITOR",          "description": "Read-only audit access" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "eclaims-frontend",
+      "name": "eClaims Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:3001/*"],
+      "webOrigins": ["http://localhost:3000", "http://localhost:3001"]
+    },
+    {
+      "clientId": "eclaims-backend",
+      "name": "eClaims Backend",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "eclaims-backend-secret-2024",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "username": "customer1",
+      "email": "customer1@eclaims.local",
+      "firstName": "Rajesh", "lastName": "Verma",
+      "enabled": true, "emailVerified": true,
+      "credentials": [{"type": "password", "value": "Customer@123", "temporary": false}],
+      "realmRoles": ["CUSTOMER"]
+    },
+    {
+      "username": "surveyor1",
+      "email": "surveyor1@eclaims.local",
+      "firstName": "Arjun", "lastName": "Sharma",
+      "enabled": true, "emailVerified": true,
+      "credentials": [{"type": "password", "value": "Surveyor@123", "temporary": false}],
+      "realmRoles": ["SURVEYOR"]
+    },
+    {
+      "username": "adjustor1",
+      "email": "adjustor1@eclaims.local",
+      "firstName": "Meena", "lastName": "Kapoor",
+      "enabled": true, "emailVerified": true,
+      "credentials": [{"type": "password", "value": "Adjustor@123", "temporary": false}],
+      "realmRoles": ["ADJUSTOR"]
+    },
+    {
+      "username": "casemanager1",
+      "email": "casemanager1@eclaims.local",
+      "firstName": "Suresh", "lastName": "Nair",
+      "enabled": true, "emailVerified": true,
+      "credentials": [{"type": "password", "value": "Manager@123", "temporary": false}],
+      "realmRoles": ["CASE_MANAGER"]
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+##############################################################################
+# eClaims — ArgoCD Application Definitions
+# Nagarro Software Pvt. Ltd.
+#
+# Apply with: kubectl apply -f argocd/
+# ArgoCD URL:  https://argocd.yourdomain.com
+#
+# ArgoCD will watch the git repo and auto-sync k8s manifests.
+# It self-heals any drift between git state and cluster state.
+##############################################################################
+
+# ── Dev Application ──────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eclaims-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.slack: eclaims-deploys
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: eclaims-alerts
+spec:
+  project: eclaims
+  source:
+    repoURL: https://github.com/manjeetrananagap/promotioncasestudy-eclaims.git
+    targetRevision: main
+    path: k8s/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eclaims-dev
+  syncPolicy:
+    automated:
+      prune: true          # remove resources deleted from git
+      selfHeal: true       # fix drift automatically
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 5
+---
+# ── Staging Application ───────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eclaims-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: eclaims
+  source:
+    repoURL: https://github.com/manjeetrananagap/promotioncasestudy-eclaims.git
+    targetRevision: main
+    path: k8s/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eclaims-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  revisionHistoryLimit: 5
+---
+# ── Production Application (manual sync only) ─────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eclaims-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.slack: eclaims-deploys
+    notifications.argoproj.io/subscribe.on-health-degraded.pagerduty: eclaims-oncall
+spec:
+  project: eclaims
+  source:
+    repoURL: https://github.com/manjeetrananagap/promotioncasestudy-eclaims.git
+    targetRevision: HEAD
+    path: k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eclaims
+  syncPolicy:
+    # NO automated sync for production — requires manual approval in ArgoCD UI
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 2
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 10
+---
+# ── ArgoCD Project (RBAC boundary) ──────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: eclaims
+  namespace: argocd
+spec:
+  description: "eClaims Insurance Platform — Nagarro"
+  sourceRepos:
+    - 'https://github.com/manjeetrananagap/*'
+  destinations:
+    - namespace: eclaims
+      server: https://kubernetes.default.svc
+    - namespace: eclaims-dev
+      server: https://kubernetes.default.svc
+    - namespace: eclaims-staging
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota
+  roles:
+    - name: dev-team
+      description: "Developers — read-only prod, full dev/staging"
+      policies:
+        - p, proj:eclaims:dev-team, applications, get, eclaims/eclaims-prod, allow
+        - p, proj:eclaims:dev-team, applications, *, eclaims/eclaims-dev, allow
+        - p, proj:eclaims:dev-team, applications, *, eclaims/eclaims-staging, allow
+      groups:
+        - manjeetrananagap
+    - name: release-manager
+      description: "Release managers — can sync production"
+      policies:
+        - p, proj:eclaims:release-manager, applications, *, eclaims/*, allow
+      groups:
+        - manjeetrananagap

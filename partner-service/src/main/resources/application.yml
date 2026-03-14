@@ -1,0 +1,78 @@
+server:
+  port: 8084
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: partner-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/partner_db
+    username: eclaims
+    password: eclaims_dev_2024
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: PartnerPool
+      maximum-pool-size: 10
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: partner-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.nagarro.eclaims.events"
+        spring.json.use.type.headers: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        spring.json.add.type.headers: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/realms/eclaims
+          jwk-set-uri: http://localhost:8080/realms/eclaims/protocol/openid-connect/certs
+
+eclaims:
+  geo:
+    surveyor-radius-km: 25     # Initial search radius for surveyors
+    surveyor-max-radius-km: 50 # Auto-expand radius if no surveyor found
+    workshop-radius-km: 30     # Search radius for workshops
+  kafka.topics:
+    surveyor-assigned: surveyor.assigned
+    workshop-assigned: workshop.assigned
+    repair-status-updated: repair.status.updated
+    repair-completed: repair.completed
+    audit-events: audit.events
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.nagarro.eclaims: DEBUG

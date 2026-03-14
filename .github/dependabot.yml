@@ -1,0 +1,107 @@
+##############################################################################
+# eClaims — Dependabot Configuration
+# Nagarro Software Pvt. Ltd.
+#
+# Keeps all dependencies automatically up-to-date via weekly PRs.
+# Patch and minor version PRs are auto-merged by the CI pipeline.
+# Major version PRs require manual review.
+##############################################################################
+
+version: 2
+
+updates:
+
+  # ── Maven (Java — root POM + all service POMs) ─────────────────────────────
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 10
+    reviewers:
+      - manjeetrananagap
+    labels:
+      - dependencies
+      - java
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # Pin Spring Boot — only update manually after thorough testing
+      - dependency-name: "org.springframework.boot:spring-boot-starter-parent"
+        update-types: ["version-update:semver-major"]
+      # Pin Spring Cloud — align with Spring Boot version
+      - dependency-name: "org.springframework.cloud:spring-cloud-dependencies"
+        update-types: ["version-update:semver-major"]
+
+  # ── npm (React frontend) ────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 10
+    reviewers:
+      - manjeetrananagap
+    labels:
+      - dependencies
+      - frontend
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # Pin React major version
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # ── Docker base images (Dockerfiles) ─────────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /claims-service
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /notification-service
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /document-service
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /partner-service
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /workflow-service
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /api-gateway
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(deps)"

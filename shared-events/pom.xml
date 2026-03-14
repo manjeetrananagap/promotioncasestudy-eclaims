@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.nagarro.eclaims</groupId>
+    <artifactId>eclaims-parent</artifactId>
+    <version>1.0.0-POC</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>shared-events</artifactId>
+  <packaging>jar</packaging>
+  <n>eClaims — Shared Kafka Events</n>
+  <description>
+    Shared Kafka event DTOs used by all microservices.
+    Producers and consumers import this module so the event contract is defined once.
+    This is a plain JAR — no Spring Boot main class.
+  </description>
+
+  <dependencies>
+    <!-- Jackson annotations for JSON serialisation of events -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!--
+        Disable Spring Boot repackage for this module — it's a plain library JAR.
+        Without this, spring-boot-maven-plugin would try to create an executable jar
+        and fail because there is no main class.
+      -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>repackage</id>
+            <phase>none</phase>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

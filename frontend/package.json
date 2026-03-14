@@ -1,0 +1,44 @@
+{
+  "name": "eclaims-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0",
+    "react-scripts": "5.0.1",
+    "@tanstack/react-query": "^5.17.0",
+    "axios": "^1.6.7",
+    "keycloak-js": "^23.0.7",
+    "@react-keycloak/web": "^3.4.0",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^4.2.1",
+    "react-hook-form": "^7.49.3",
+    "react-hot-toast": "^2.4.1",
+    "date-fns": "^3.3.1",
+    "recharts": "^2.10.4",
+    "lucide-react": "^0.316.0",
+    "@headlessui/react": "^1.7.18",
+    "clsx": "^2.1.0",
+    "typescript": "^5.3.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.18",
+    "@types/leaflet": "^1.9.8",
+    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.35"
+  },
+  "proxy": "http://localhost:8080",
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+  }
+}

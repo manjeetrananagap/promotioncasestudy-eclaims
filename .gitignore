@@ -1,0 +1,59 @@
+# Maven
+target/
+*.class
+*.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+.classpath
+.project
+.settings/
+*.swp
+*.swo
+
+# Node / React
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+
+# Environment / secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+**/application-prod.yml
+**/application-secret.yml
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+/tmp/eclaims-*.log
+/tmp/eclaims-pids/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# GCP credentials
+/tmp/sa-key.json
+*-keyfile.json
+service-account*.json
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# K8s secrets (never commit actual values)
+k8s/**/secrets-actual.yaml

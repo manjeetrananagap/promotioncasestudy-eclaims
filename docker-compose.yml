@@ -1,0 +1,484 @@
+##############################################################################
+# eClaims — Full Local Development Stack
+# Nagarro Software Pvt. Ltd.
+#
+# Usage:
+#   docker compose up -d              # start all infra
+#   docker compose up -d claims-service  # start specific service
+#   docker compose logs -f claims-service
+#   docker compose down -v            # stop + remove volumes
+#
+# Ports:
+#   3000  → React Frontend
+#   8080  → API Gateway
+#   8081  → Claims Service
+#   8082  → Notification Service
+#   8083  → Document Service
+#   8084  → Partner Service
+#   8085  → Workflow Service
+#   8180  → Keycloak (IAM)
+#   8090  → Kafka UI
+#   9001  → MinIO Console
+#   5432  → PostgreSQL
+#   9090  → Prometheus
+#   3001  → Grafana
+#   26500 → Zeebe gRPC (Camunda)
+#   8088  → Zeebe REST
+#   8889  → Camunda Operate
+##############################################################################
+
+version: '3.9'
+
+networks:
+  eclaims-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  minio-data:
+  keycloak-data:
+  kafka-data:
+  zeebe-data:
+  prometheus-data:
+  grafana-data:
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: eclaims-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eclaims
+      POSTGRES_PASSWORD: eclaims_pass
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eclaims -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [eclaims-net]
+
+  # ── Zookeeper ──────────────────────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: eclaims-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: echo stat | nc localhost 2181
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [eclaims-net]
+
+  # ── Kafka ──────────────────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: eclaims-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks: [eclaims-net]
+
+  # ── Kafka Topic Initialiser ────────────────────────────────────────────────
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: eclaims-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: |
+      "
+      echo 'Creating Kafka topics...'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic claim.submitted          --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic claim.validated          --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic surveyor.assigned        --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic assessment.submitted     --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic claim.approved           --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic claim.rejected           --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic workshop.assigned        --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic repair.status.updated    --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic repair.completed         --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payment.processed        --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic claim.closed             --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic audit.events             --partitions 3 --replication-factor 1
+      echo 'All 12 topics created.'
+      "
+    networks: [eclaims-net]
+
+  # ── Kafka UI ───────────────────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: eclaims-kafka-ui
+    restart: unless-stopped
+    depends_on: [kafka]
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: eclaims-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    networks: [eclaims-net]
+
+  # ── Keycloak ───────────────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0.6
+    container_name: eclaims-keycloak
+    restart: unless-stopped
+    ports:
+      - "8180:8080"
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: eclaims
+      KC_DB_PASSWORD: eclaims_pass
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+      KC_HEALTH_ENABLED: 'true'
+    command: ["start-dev", "--import-realm"]
+    volumes:
+      - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    networks: [eclaims-net]
+
+  # ── MinIO (S3-compatible object storage) ──────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: eclaims-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: eclaims_admin
+      MINIO_ROOT_PASSWORD: eclaims_secret_2024
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks: [eclaims-net]
+
+  # MinIO bucket creator
+  minio-init:
+    image: minio/mc:latest
+    container_name: eclaims-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      mc alias set local http://minio:9000 eclaims_admin eclaims_secret_2024
+      mc mb --ignore-existing local/eclaims-documents
+      mc mb --ignore-existing local/eclaims-photos
+      mc mb --ignore-existing local/eclaims-reports
+      echo 'MinIO buckets ready.'
+      "
+    networks: [eclaims-net]
+
+  # ── Mailhog (SMTP trap for local email testing) ────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: eclaims-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    networks: [eclaims-net]
+
+  # ── Camunda 8 / Zeebe (Workflow Engine) ───────────────────────────────────
+  zeebe:
+    image: camunda/zeebe:8.4.0
+    container_name: eclaims-zeebe
+    restart: unless-stopped
+    ports:
+      - "26500:26500"   # gRPC gateway
+      - "9600:9600"     # monitoring
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xms512m -Xmx512m
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME=io.camunda.zeebe.exporter.ElasticsearchExporter
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL=http://elasticsearch:9200
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_SIZE=1
+    volumes:
+      - zeebe-data:/usr/local/zeebe/data
+    depends_on: [elasticsearch]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9600/ready || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks: [eclaims-net]
+
+  # ── Elasticsearch (required by Zeebe/Operate) ─────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    container_name: eclaims-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks: [eclaims-net]
+
+  # ── Camunda Operate (process monitoring UI) ───────────────────────────────
+  operate:
+    image: camunda/operate:8.4.0
+    container_name: eclaims-operate
+    restart: unless-stopped
+    ports:
+      - "8889:8080"
+    environment:
+      - CAMUNDA_OPERATE_ZEEBE_GATEWAYADDRESS=zeebe:26500
+      - CAMUNDA_OPERATE_ELASTICSEARCH_URL=http://elasticsearch:9200
+      - CAMUNDA_OPERATE_ZEEBEELASTICSEARCH_URL=http://elasticsearch:9200
+      - SPRING_PROFILES_ACTIVE=dev
+    depends_on: [zeebe, elasticsearch]
+    networks: [eclaims-net]
+
+  # ── Prometheus ─────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: eclaims-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+    networks: [eclaims-net]
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: eclaims-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    depends_on: [prometheus]
+    networks: [eclaims-net]
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # APPLICATION SERVICES
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── Claims Service (port 8081) ─────────────────────────────────────────────
+  claims-service:
+    build:
+      context: ./claims-service
+      dockerfile: Dockerfile
+    container_name: eclaims-claims
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/claims_db
+      SPRING_DATASOURCE_USERNAME: eclaims
+      SPRING_DATASOURCE_PASSWORD: eclaims_pass
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/eclaims
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks: [eclaims-net]
+    profiles: [apps]
+
+  # ── Notification Service (port 8082) ──────────────────────────────────────
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: eclaims-notification
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: eclaims
+      SPRING_DATASOURCE_PASSWORD: eclaims_pass
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_MAIL_HOST: mailhog
+      SPRING_MAIL_PORT: 1025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks: [eclaims-net]
+    profiles: [apps]
+
+  # ── Document Service (port 8083) ──────────────────────────────────────────
+  document-service:
+    build:
+      context: ./document-service
+      dockerfile: Dockerfile
+    container_name: eclaims-document
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/document_db
+      SPRING_DATASOURCE_USERNAME: eclaims
+      SPRING_DATASOURCE_PASSWORD: eclaims_pass
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: eclaims_admin
+      MINIO_SECRET_KEY: eclaims_secret_2024
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks: [eclaims-net]
+    profiles: [apps]
+
+  # ── Partner Service (port 8084) ────────────────────────────────────────────
+  partner-service:
+    build:
+      context: ./partner-service
+      dockerfile: Dockerfile
+    container_name: eclaims-partner
+    restart: unless-stopped
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/partner_db
+      SPRING_DATASOURCE_USERNAME: eclaims
+      SPRING_DATASOURCE_PASSWORD: eclaims_pass
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks: [eclaims-net]
+    profiles: [apps]
+
+  # ── Workflow Service (port 8085) ───────────────────────────────────────────
+  workflow-service:
+    build:
+      context: ./workflow-service
+      dockerfile: Dockerfile
+    container_name: eclaims-workflow
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/workflow_db
+      SPRING_DATASOURCE_USERNAME: eclaims
+      SPRING_DATASOURCE_PASSWORD: eclaims_pass
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZEEBE_CLIENT_BROKER_GATEWAYADDRESS: zeebe:26500
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      zeebe:
+        condition: service_healthy
+    networks: [eclaims-net]
+    profiles: [apps]
+
+  # ── API Gateway (port 8080) ────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: eclaims-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/eclaims
+      SERVICES_CLAIMS_URL: http://claims-service:8081
+      SERVICES_NOTIFICATION_URL: http://notification-service:8082
+      SERVICES_DOCUMENT_URL: http://document-service:8083
+      SERVICES_PARTNER_URL: http://partner-service:8084
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks: [eclaims-net]
+    profiles: [apps]
+
+  # ── React Frontend (port 3000) ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: http://localhost:8080
+        REACT_APP_KEYCLOAK_URL: http://localhost:8180
+        REACT_APP_KEYCLOAK_REALM: eclaims
+        REACT_APP_KEYCLOAK_CLIENT: eclaims-frontend
+    container_name: eclaims-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on: [api-gateway]
+    networks: [eclaims-net]
+    profiles: [apps]

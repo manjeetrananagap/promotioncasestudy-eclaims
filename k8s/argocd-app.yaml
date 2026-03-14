@@ -1,0 +1,115 @@
+##############################################################################
+# ArgoCD Application — eClaims GitOps
+# Apply with: kubectl apply -f argocd-app.yaml -n argocd
+##############################################################################
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: eclaims
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: eClaims Insurance Platform — Nagarro
+  sourceRepos:
+    - 'https://github.com/manjeetrananagap/promotioncasestudy-eclaims.git'
+    - 'https://github.com/manjeetrananagap/promotioncasestudy-eclaims.git'
+  destinations:
+    - namespace: eclaims
+      server: https://kubernetes.default.svc
+    - namespace: eclaims-dev
+      server: https://kubernetes.default.svc
+    - namespace: eclaims-staging
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: 'apps'
+      kind: Deployment
+    - group: 'apps'
+      kind: StatefulSet
+    - group: ''
+      kind: Service
+    - group: 'autoscaling'
+      kind: HorizontalPodAutoscaler
+    - group: 'networking.k8s.io'
+      kind: Ingress
+    - group: ''
+      kind: ConfigMap
+---
+# ── Production Application ───────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eclaims-prod
+  namespace: argocd
+  labels:
+    environment: production
+    team: eclaims
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: eclaims
+
+  source:
+    repoURL: https://github.com/manjeetrananagap/promotioncasestudy-eclaims.git
+    targetRevision: main
+    path: k8s/overlays/prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eclaims
+
+  syncPolicy:
+    automated:
+      prune: true       # Remove resources no longer in Git
+      selfHeal: true    # Auto-fix drift (e.g. manual kubectl changes)
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  revisionHistoryLimit: 10
+
+  # Health checks
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas   # Allow HPA to manage replicas
+---
+# ── Dev Application ──────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eclaims-dev
+  namespace: argocd
+  labels:
+    environment: development
+spec:
+  project: eclaims
+
+  source:
+    repoURL: https://github.com/manjeetrananagap/promotioncasestudy-eclaims.git
+    targetRevision: main
+    path: k8s/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eclaims-dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

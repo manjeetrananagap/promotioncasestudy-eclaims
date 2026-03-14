@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    eClaims POC — Parent POM
+    ========================
+    All microservices inherit from this POM.
+    Versions for every dependency are declared HERE only — never in child POMs.
+    Child POMs declare dependencies WITHOUT versions (BOM manages them).
+
+    Build all:         mvn clean install
+    Build one:         mvn clean install -pl claims-service -am
+    Run service:       cd claims-service && mvn spring-boot:run
+    Run tests:         mvn test
+    Skip tests:        mvn clean install -DskipTests
+  -->
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.2.2</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.nagarro.eclaims</groupId>
+  <artifactId>eclaims-parent</artifactId>
+  <version>1.0.0-POC</version>
+  <packaging>pom</packaging>
+  <name>eClaims POC — Parent</name>
+  <description>
+    Nagarro eClaims — Event-Driven Microservices POC.
+    Spring Boot 3 · Spring Data JPA (Hibernate 6) · PostgreSQL · Apache Kafka · MinIO
+  </description>
+
+  <!-- ── Child modules ───────────────────────────────────────────────────── -->
+  <modules>
+    <module>shared-events</module>
+    <module>claims-service</module>
+    <module>notification-service</module>
+    <module>document-service</module>
+    <module>partner-service</module>
+    <module>api-gateway</module>
+    <module>workflow-service</module>
+  </modules>
+
+  <!-- ── Global properties ────────────────────────────────────────────────── -->
+  <properties>
+    <java.version>17</java.version>
+
+    <!-- SonarCloud — https://sonarcloud.io -->
+    <sonar.projectKey>manjeetrananagap_promotioncasestudy-eclaims</sonar.projectKey>
+    <sonar.organization>manjeetrananagap</sonar.organization>
+    <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+    <sonar.coverage.jacoco.xmlReportPaths>${project.basedir}/../**/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <!-- Dependency versions — single source of truth -->
+    <mapstruct.version>1.5.5.Final</mapstruct.version>
+    <lombok.version>1.18.30</lombok.version>
+    <minio.version>8.5.7</minio.version>
+    <testcontainers.version>1.19.3</testcontainers.version>
+    <embedded-postgres.version>2.0.6</embedded-postgres.version>
+    <embedded-postgres-binaries.version>15.4.0</embedded-postgres-binaries.version>
+  </properties>
+
+  <!-- ── Dependency Management (BOM) — versions declared once ────────────── -->
+  <dependencyManagement>
+    <dependencies>
+
+      <!-- Internal: shared Kafka event DTOs -->
+      <dependency>
+        <groupId>com.nagarro.eclaims</groupId>
+        <artifactId>shared-events</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <!-- MapStruct — compile-time DTO↔Entity mapping -->
+      <dependency>
+        <groupId>org.mapstruct</groupId>
+        <artifactId>mapstruct</artifactId>
+        <version>${mapstruct.version}</version>
+      </dependency>
+
+      <!-- MinIO Java SDK — S3-compatible object storage client -->
+      <dependency>
+        <groupId>io.minio</groupId>
+        <artifactId>minio</artifactId>
+        <version>${minio.version}</version>
+      </dependency>
+
+      <!-- Testcontainers — spin up real Docker containers in tests -->
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers</artifactId>
+        <version>${testcontainers.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>postgresql</artifactId>
+        <version>${testcontainers.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>kafka</artifactId>
+        <version>${testcontainers.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>${testcontainers.version}</version>
+        <scope>test</scope>
+      </dependency>
+
+    </dependencies>
+  </dependencyManagement>
+
+  <!-- ── Dependencies inherited by ALL child modules ──────────────────────── -->
+  <dependencies>
+    <!-- Lombok — every module uses it for boilerplate reduction -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- Jackson JSR-310 — Java 8+ date/time types serialisation -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+    </dependency>
+
+    <!-- Spring Boot Test — all modules need this -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <!-- ── Build plugins inherited by ALL modules ───────────────────────────── -->
+  <build>
+    <pluginManagement>
+      <plugins>
+
+        <!-- Compiler: Java 17 + MapStruct + Lombok annotation processors -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <source>${java.version}</source>
+            <target>${java.version}</target>
+            <annotationProcessorPaths>
+              <path>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+              </path>
+              <path>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+              </path>
+            </annotationProcessorPaths>
+            <!-- Ensure MapStruct sees Lombok-generated methods -->
+            <compilerArgs>
+              <arg>-Amapstruct.defaultComponentModel=spring</arg>
+            </compilerArgs>
+          </configuration>
+        </plugin>
+
+        <!-- Spring Boot plugin — only active in services, not shared-events -->
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <configuration>
+            <excludes>
+              <exclude>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+              </exclude>
+            </excludes>
+          </configuration>
+        </plugin>
+
+      </plugins>
+    </pluginManagement>
+  </build>
+
+</project>

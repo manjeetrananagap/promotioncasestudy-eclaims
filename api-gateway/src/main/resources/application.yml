@@ -1,0 +1,84 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/eclaims
+
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+
+      routes:
+        # Claims Service
+        - id: claims-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/claims/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: claimsCircuitBreaker
+                fallbackUri: forward:/fallback/claims
+
+        # Document Service
+        - id: document-service
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/v1/documents/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: documentCircuitBreaker
+                fallbackUri: forward:/fallback/documents
+
+        # Partner Service
+        - id: partner-service
+          uri: http://localhost:8084
+          predicates:
+            - Path=/api/v1/partners/**,/api/v1/surveyors/**,/api/v1/workshops/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: partnerCircuitBreaker
+
+        # Notification Service
+        - id: notification-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/v1/notifications/**
+
+      # Rate limiting (default: 10 requests per second)
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 10
+            redis-rate-limiter.burstCapacity: 20
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    com.nagarro.eclaims: DEBUG
