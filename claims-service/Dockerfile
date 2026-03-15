@@ -1,23 +1,10 @@
-# ── Stage 1: Build ──────────────────────────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-17 AS builder
-WORKDIR /build
-
-# Cache dependencies first
-COPY pom.xml .
-COPY ../pom.xml ../pom.xml 2>/dev/null || true
-
-# Copy source
-COPY src ./src
-
-RUN mvn clean package -DskipTests -q
-
-# ── Stage 2: Runtime (JRE only ~80MB vs JDK ~300MB) ─────────────────────────
-FROM eclipse-temurin:17-jre-alpine AS runtime
+FROM eclipse-temurin:17-jre-alpine
 
 RUN addgroup -S eclaims && adduser -S eclaims -G eclaims
 WORKDIR /app
 
-COPY --from=builder /build/target/*.jar app.jar
+# Copy pre-built JAR from Maven build step
+COPY target/*.jar app.jar
 
 RUN chown eclaims:eclaims app.jar
 USER eclaims

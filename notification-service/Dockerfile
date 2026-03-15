@@ -1,13 +1,10 @@
-FROM maven:3.9-eclipse-temurin-17 AS builder
-WORKDIR /build
-COPY pom.xml .
-COPY src ./src
-RUN mvn clean package -DskipTests -q
+FROM eclipse-temurin:17-jre-alpine
 
-FROM eclipse-temurin:17-jre-alpine AS runtime
 RUN addgroup -S eclaims && adduser -S eclaims -G eclaims
 WORKDIR /app
-COPY --from=builder /build/target/*.jar app.jar
+
+# Copy pre-built JAR from Maven build step
+COPY target/*.jar app.jar
 RUN chown eclaims:eclaims app.jar
 USER eclaims
 EXPOSE 8082
