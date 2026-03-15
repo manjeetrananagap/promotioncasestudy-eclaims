@@ -1,5 +1,6 @@
 package com.nagarro.eclaims.claims;
 
+import com.nagarro.eclaims.claims.config.TestSecurityConfig;
 import com.nagarro.eclaims.claims.dto.ClaimRequest;
 import com.nagarro.eclaims.claims.dto.ClaimResponse;
 import com.nagarro.eclaims.claims.entity.ClaimStatus;
@@ -8,6 +9,7 @@ import com.nagarro.eclaims.claims.service.ClaimService;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -26,6 +28,7 @@ import static org.assertj.core.api.Assertions.*;
  * No mocks — tests hit the real DB and real Kafka.
  */
 @SpringBootTest
+@Import(TestSecurityConfig.class)
 @Testcontainers
 @EmbeddedKafka(partitions = 1,
     topics = {"claim.submitted", "claim.validated", "claim.approved", "claim.closed", "audit.events"})
@@ -46,9 +49,6 @@ class ClaimsServiceIntegrationTest {
         registry.add("spring.datasource.url",      postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        // Disable Keycloak JWT check in tests
-        registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri", () -> "");
-        registry.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri", () -> "");
         // Use embedded Kafka broker injected by @EmbeddedKafka
         registry.add("spring.kafka.bootstrap-servers",
             () -> System.getProperty("spring.embedded.kafka.brokers", "localhost:9092"));
