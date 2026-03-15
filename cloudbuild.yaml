@@ -8,100 +8,82 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/claims-service:$SHORT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/claims-service:latest'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/claims-service:latest'
       - './claims-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/notification-service:$SHORT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/notification-service:latest'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/notification-service:latest'
       - './notification-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/document-service:$SHORT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/document-service:latest'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/document-service:latest'
       - './document-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/partner-service:$SHORT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/partner-service:latest'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/partner-service:latest'
       - './partner-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/api-gateway:$SHORT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/api-gateway:latest'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/api-gateway:latest'
       - './api-gateway/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/workflow-service:$SHORT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/workflow-service:latest'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/workflow-service:latest'
       - './workflow-service/'
 
-  # Push all images
+  # Push all images using --all-tags
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA']
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/claims-service']
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/claims-service:latest']
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/notification-service']
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA']
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/document-service']
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/notification-service:latest']
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/partner-service']
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA']
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/api-gateway']
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/document-service:latest']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/partner-service:latest']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/api-gateway:latest']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/workflow-service:latest']
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/workflow-service']
 
 images:
-  - 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA'
-  - 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA'
-  - 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA'
-  - 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA'
-  - 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA'
-  - 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/claims-service:$SHORT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/notification-service:$SHORT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/document-service:$SHORT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/partner-service:$SHORT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/api-gateway:$SHORT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/workflow-service:$SHORT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
