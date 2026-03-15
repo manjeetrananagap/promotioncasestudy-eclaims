@@ -130,12 +130,12 @@ public class ClaimJobHandlers {
 
         // Publish claim.closed to Kafka
         ClaimClosedEvent event = ClaimClosedEvent.builder()
-            .eventId(UUID.randomUUID())
+            .eventId(UUID.randomUUID().toString())
             .claimId(UUID.fromString(claimId))
             .claimNumber((String) vars.getOrDefault("claimNumber", ""))
             .closedBy("WORKFLOW_ENGINE")
             .closureReason("PAYMENT_SETTLED")
-            .closedAt(LocalDateTime.now())
+            .occurredAt(LocalDateTime.now())
             .build();
 
         kafkaTemplate.send("claim.closed", claimId, event);

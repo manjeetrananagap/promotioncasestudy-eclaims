@@ -72,8 +72,8 @@ public class WorkflowKafkaListener {
             .variables(Map.of(
                 "assessmentValid", true,
                 "surveyorId",      event.getSurveyorId() != null ? event.getSurveyorId() : "",
-                "estimatedAmount", event.getEstimatedAmount() != null
-                                   ? event.getEstimatedAmount().toString() : "0"
+                "estimatedAmount", event.getEstimatedRepairAmount() != null
+                                   ? event.getEstimatedRepairAmount().toString() : "0"
             ))
             .send()
             .whenComplete((r, ex) -> {
@@ -94,8 +94,8 @@ public class WorkflowKafkaListener {
             .variables(Map.of(
                 "finalRepairCost", event.getFinalRepairCost() != null
                                    ? event.getFinalRepairCost().toString() : "0",
-                "repairCompletedAt", event.getCompletedAt() != null
-                                     ? event.getCompletedAt().toString() : ""
+                "repairCompletedAt", event.getOccurredAt() != null
+                                     ? event.getOccurredAt().toString() : ""
             ))
             .send()
             .whenComplete((r, ex) -> {
