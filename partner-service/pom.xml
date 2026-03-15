@@ -13,7 +13,7 @@
   </parent>
 
   <artifactId>partner-service</artifactId>
-  <n>eClaims — Partner Service</n>
+  <name>eClaims — Partner Service</name>
   <description>
     Geo-radius surveyor + workshop matching. Listens to claim.validated and
     claim.approved events. Publishes surveyor.assigned and workshop.assigned.

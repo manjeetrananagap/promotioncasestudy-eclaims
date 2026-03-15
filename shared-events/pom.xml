@@ -15,7 +15,7 @@
 
   <artifactId>shared-events</artifactId>
   <packaging>jar</packaging>
-  <n>eClaims — Shared Kafka Events</n>
+  <name>eClaims — Shared Kafka Events</name>
   <description>
     Shared Kafka event DTOs used by all microservices.
     Producers and consumers import this module so the event contract is defined once.
