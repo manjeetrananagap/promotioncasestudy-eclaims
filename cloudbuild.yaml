@@ -1,67 +1,111 @@
 steps:
+  # Build all Java services
   - name: 'gcr.io/cloud-builders/mvn'
-    args: ['package']
+    args: ['package', '-DskipTests']
+
+  # Build Docker images for each service
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/claims-service:latest'
+      - './claims-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/PROJECT_ID/microservice-a'
-      - './microservice-a/'
+      - 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/notification-service:latest'
+      - './notification-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/PROJECT_ID/microservice-b'
-      - './microservice-b/'
+      - 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/document-service:latest'
+      - './document-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/PROJECT_ID/microservice-c'
-      - './microservice-c/'
+      - 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/partner-service:latest'
+      - './partner-service/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
-      - 'push'
-      - 'gcr.io/PROJECT_ID/microservice-a'
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/api-gateway:latest'
+      - './api-gateway/'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
-      - 'push'
-      - 'gcr.io/PROJECT_ID/microservice-b'
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/workflow-service:latest'
+      - './workflow-service/'
+
+  # Push all images
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA']
 
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/PROJECT_ID/microservice-c'
+    args: ['push', 'gcr.io/$PROJECT_ID/claims-service:latest']
 
-  - name: 'gcr.io/cloud-builders/kubectl'
-    args:
-      - 'set'
-      - 'image'
-      - 'deployment/microservice-a'
-      - 'microservice-a=gcr.io/PROJECT_ID/microservice-a'
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA']
 
-  - name: 'gcr.io/cloud-builders/kubectl'
-    args:
-      - 'set'
-      - 'image'
-      - 'deployment/microservice-b'
-      - 'microservice-b=gcr.io/PROJECT_ID/microservice-b'
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/notification-service:latest']
 
-  - name: 'gcr.io/cloud-builders/kubectl'
-    args:
-      - 'set'
-      - 'image'
-      - 'deployment/microservice-c'
-      - 'microservice-c=gcr.io/PROJECT_ID/microservice-c'
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/document-service:latest']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/partner-service:latest']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/api-gateway:latest']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/workflow-service:latest']
+
+images:
+  - 'gcr.io/$PROJECT_ID/claims-service:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/notification-service:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/document-service:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/partner-service:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/api-gateway:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/workflow-service:$SHORT_SHA'
 
 options:
-  logging: 'CLOUD_LOGGING_ONLY'
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
 
 substitutions:
   _REGION: 'us-central1'
-  _PROJECT_ID: 'your-project-id'
