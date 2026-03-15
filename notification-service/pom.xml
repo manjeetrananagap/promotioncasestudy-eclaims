@@ -13,7 +13,7 @@
   </parent>
 
   <artifactId>notification-service</artifactId>
-  <n>eClaims — Notification Service</n>
+  <name>eClaims — Notification Service</name>
   <description>
     Pure Kafka consumer. Stateless. Sends email (SMTP/Mailhog) and logs all
     notifications with idempotency check to prevent duplicate sends.

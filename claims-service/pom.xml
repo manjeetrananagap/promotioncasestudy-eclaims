@@ -14,7 +14,7 @@
   </parent>
 
   <artifactId>claims-service</artifactId>
-  <n>eClaims — Claims Service</n>
+  <name>eClaims — Claims Service</name>
   <description>
     Core claims lifecycle microservice.
     Handles FNOL intake, policy validation, state transitions, Kafka event publishing.

@@ -10,7 +10,7 @@
     <version>1.0.0-POC</version>
   </parent>
   <artifactId>workflow-service</artifactId>
-  <n>eClaims Workflow Service (Camunda 8 / Zeebe)</n>
+  <name>eClaims Workflow Service (Camunda 8 / Zeebe)</name>
 
   <properties>
     <camunda.version>8.4.0</camunda.version>
