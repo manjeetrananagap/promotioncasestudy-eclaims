@@ -1,5 +1,5 @@
 steps:
-  # Build all Java services
+  # Build all Java services with parent POM
   - name: 'gcr.io/cloud-builders/mvn'
     args: ['package', '-DskipTests']
 
