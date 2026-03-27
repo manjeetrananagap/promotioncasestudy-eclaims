@@ -22,7 +22,7 @@ ENV REACT_APP_KEYCLOAK_CLIENT=$REACT_APP_KEYCLOAK_CLIENT
 RUN npm run build
 
 # ── Stage 2: Serve with Nginx ────────────────────────────────────────────────
-FROM nginx:1.25-alpine AS runtime
+FROM nginx:1.29-alpine AS runtime
 
 # Copy built assets
 COPY --from=builder /app/build /usr/share/nginx/html
