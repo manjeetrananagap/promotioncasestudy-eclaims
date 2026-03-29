@@ -61,7 +61,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
     <!-- Dependency versions — single source of truth -->
-    <mapstruct.version>1.5.5.Final</mapstruct.version>
+    <mapstruct.version>1.6.3</mapstruct.version>
     <lombok.version>1.18.30</lombok.version>
     <minio.version>8.5.7</minio.version>
     <testcontainers.version>1.19.3</testcontainers.version>
