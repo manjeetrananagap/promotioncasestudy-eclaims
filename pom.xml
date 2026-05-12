@@ -63,7 +63,7 @@
     <!-- Dependency versions — single source of truth -->
     <mapstruct.version>1.5.5.Final</mapstruct.version>
     <lombok.version>1.18.30</lombok.version>
-    <minio.version>8.5.7</minio.version>
+    <minio.version>9.0.0</minio.version>
     <testcontainers.version>1.19.3</testcontainers.version>
     <embedded-postgres.version>2.0.6</embedded-postgres.version>
     <embedded-postgres-binaries.version>15.4.0</embedded-postgres-binaries.version>
