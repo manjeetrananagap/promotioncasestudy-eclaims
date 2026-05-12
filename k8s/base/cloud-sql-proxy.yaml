@@ -1,0 +1,82 @@
+# ==============================================================================
+# Cloud SQL Auth Proxy
+# Runs as a Deployment and exposes Cloud SQL as 'postgres-service:5432' within
+# the 'eclaims' namespace. All microservices connect to it using the existing
+# SPRING_DATASOURCE_URL = jdbc:postgresql://postgres-service:5432/<db>.
+#
+# The proxy authenticates to Cloud SQL via Workload Identity (no passwords
+# or service account keys needed).
+#
+# CLOUD_SQL_CONNECTION_NAME is replaced by deploy-gcp.sh with the actual
+# terraform output value, e.g. eclaims-promotioncasestudy:us-central1:eclaims-postgres
+# ==============================================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-sql-proxy
+  namespace: eclaims
+  labels:
+    app: cloud-sql-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloud-sql-proxy
+  template:
+    metadata:
+      labels:
+        app: cloud-sql-proxy
+    spec:
+      serviceAccountName: eclaims-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+        - name: cloud-sql-proxy
+          # Pin to a specific digest in production for supply-chain security
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.4
+          args:
+            - "--structured-logs"
+            - "--port=5432"
+            - "CLOUD_SQL_CONNECTION_NAME"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: eclaims
+  labels:
+    app: cloud-sql-proxy
+spec:
+  selector:
+    app: cloud-sql-proxy
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP

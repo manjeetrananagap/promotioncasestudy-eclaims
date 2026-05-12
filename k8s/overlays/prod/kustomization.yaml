@@ -9,25 +9,25 @@ resources:
 # Image tag substitution — CI/CD injects actual tag
 images:
   - name: REGISTRY/eclaims/claims-service
-    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/claims-service
+    newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/claims-service
     newTag: latest
   - name: REGISTRY/eclaims/notification-service
-    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/notification-service
+    newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/notification-service
     newTag: latest
   - name: REGISTRY/eclaims/document-service
-    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/document-service
+    newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/document-service
     newTag: latest
   - name: REGISTRY/eclaims/partner-service
-    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/partner-service
+    newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/partner-service
     newTag: latest
   - name: REGISTRY/eclaims/workflow-service
-    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/workflow-service
+    newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/workflow-service
     newTag: latest
   - name: REGISTRY/eclaims/api-gateway
-    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/api-gateway
+    newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/api-gateway
     newTag: latest
   - name: REGISTRY/eclaims/frontend
-    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/frontend
+    newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/frontend
     newTag: latest
 
 patches:
@@ -48,3 +48,16 @@ patches:
     target:
       kind: Deployment
       name: partner-service
+
+  # Workload Identity — bind eclaims-sa K8s SA to the GCP service account
+  - patch: |-
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: eclaims-sa
+        namespace: eclaims
+        annotations:
+          iam.gke.io/gcp-service-account: eclaims-workload@eclaims-promotioncasestudy.iam.gserviceaccount.com
+    target:
+      kind: ServiceAccount
+      name: eclaims-sa

@@ -5,6 +5,7 @@ namespace: eclaims
 
 resources:
   - namespace.yaml
+  - cloud-sql-proxy.yaml
   - claims-service.yaml
   - services.yaml
   - ingress-rbac.yaml

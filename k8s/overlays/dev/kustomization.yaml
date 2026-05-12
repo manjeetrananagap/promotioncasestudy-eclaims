@@ -16,6 +16,20 @@ patches:
     target:
       kind: Deployment
 
+patches:
+  # Workload Identity — bind eclaims-sa K8s SA to the GCP service account
+  - patch: |-
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: eclaims-sa
+        namespace: eclaims-dev
+        annotations:
+          iam.gke.io/gcp-service-account: eclaims-workload@eclaims-promotioncasestudy.iam.gserviceaccount.com
+    target:
+      kind: ServiceAccount
+      name: eclaims-sa
+
 images:
   - name: REGISTRY/eclaims/claims-service
     newName: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/claims-service

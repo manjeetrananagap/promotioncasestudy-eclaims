@@ -58,6 +58,15 @@ steps:
       - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/workflow-service:latest'
       - './workflow-service/'
 
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/frontend:$SHORT_SHA'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/frontend:latest'
+      - './frontend/'
+
   # Push all images using --all-tags
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/claims-service']
@@ -77,6 +86,9 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/workflow-service']
 
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/frontend']
+
 images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/claims-service:$SHORT_SHA'
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/notification-service:$SHORT_SHA'
@@ -84,6 +96,7 @@ images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/partner-service:$SHORT_SHA'
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/api-gateway:$SHORT_SHA'
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/workflow-service:$SHORT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/eclaims/frontend:$SHORT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY

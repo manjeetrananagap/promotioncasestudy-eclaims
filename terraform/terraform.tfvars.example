@@ -1,0 +1,30 @@
+# =============================================================================
+# terraform.tfvars.example — eClaims GCP Infrastructure Variables
+# Copy to terraform.tfvars and fill in your values before running terraform.
+# =============================================================================
+
+# GCP project ID (found in GCP Console → Project Info)
+project_id = "eclaims-promotioncasestudy"
+
+# Primary region for all resources
+region = "us-central1"
+
+# Disaster-recovery region (read replica, DR cluster)
+dr_region = "us-east1"
+
+# VPC names
+network    = "eclaims-vpc"
+subnetwork = "eclaims-subnet"
+
+# GKE Autopilot cluster name
+gke_cluster_name = "eclaims-autopilot"
+
+# Cloud SQL instance name
+db_instance_name = "eclaims-postgres"
+
+# Memorystore Redis instance name
+redis_instance_name = "eclaims-redis"
+
+# Cloud SQL master password — use a strong password or generate one:
+# openssl rand -base64 32
+db_password = "CHANGE_ME_STRONG_PASSWORD"
