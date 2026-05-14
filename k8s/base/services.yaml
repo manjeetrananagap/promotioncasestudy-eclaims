@@ -396,6 +396,10 @@ spec:
               value: "true"
             - name: KC_HTTP_RELATIVE_PATH
               value: "/auth"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_PROXY
+              value: "edge"
           args:
             - start-dev
             - --import-realm
