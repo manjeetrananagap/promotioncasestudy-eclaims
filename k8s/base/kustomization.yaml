@@ -8,4 +8,6 @@ resources:
   - cloud-sql-proxy.yaml
   - claims-service.yaml
   - services.yaml
+  - kafka.yaml
+  - zeebe.yaml
   - ingress-rbac.yaml

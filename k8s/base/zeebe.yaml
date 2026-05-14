@@ -1,0 +1,137 @@
+---
+# ── Zeebe (Camunda 8) Workflow Engine ─────────────────────────────────────────
+# Single-broker, embedded gateway, no Elasticsearch exporter (POC config)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zeebe-pvc
+  namespace: eclaims
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zeebe
+  namespace: eclaims
+  labels:
+    app: zeebe
+spec:
+  serviceName: zeebe-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zeebe
+  template:
+    metadata:
+      labels:
+        app: zeebe
+    spec:
+      initContainers:
+        - name: init-zeebe-data
+          image: busybox:1.36
+          command: ['sh', '-c', 'mkdir -p /mnt/zeebe/data && chmod -R 777 /mnt/zeebe/data']
+          volumeMounts:
+            - name: zeebe-storage
+              mountPath: /mnt/zeebe
+      containers:
+        - name: zeebe
+          image: camunda/zeebe:8.4.0
+          ports:
+            - containerPort: 26500  # Gateway gRPC (clients connect here)
+              name: gateway-grpc
+            - containerPort: 26501  # Command API (internal)
+              name: command-api
+            - containerPort: 26502  # Internal API (inter-broker)
+              name: internal-api
+            - containerPort: 9600   # Monitoring / Prometheus
+              name: monitoring
+          env:
+            # Single-node cluster
+            - name: ZEEBE_BROKER_CLUSTER_SIZE
+              value: "1"
+            - name: ZEEBE_BROKER_CLUSTER_REPLICATIONFACTOR
+              value: "1"
+            - name: ZEEBE_BROKER_CLUSTER_PARTITIONSCOUNT
+              value: "1"
+            - name: ZEEBE_BROKER_CLUSTER_NODEID
+              value: "0"
+            - name: ZEEBE_BROKER_CLUSTER_INITIALCONTACTPOINTS
+              value: "zeebe-headless:26502"
+            # Enable embedded gateway so clients reach gRPC on port 26500
+            - name: ZEEBE_BROKER_GATEWAY_ENABLE
+              value: "true"
+            - name: ZEEBE_BROKER_GATEWAY_NETWORK_HOST
+              value: "0.0.0.0"
+            - name: ZEEBE_BROKER_GATEWAY_NETWORK_PORT
+              value: "26500"
+            # Data directory
+            - name: ZEEBE_BROKER_DATA_DIRECTORY
+              value: /mnt/zeebe/data
+            - name: JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+          volumeMounts:
+            - name: zeebe-storage
+              mountPath: /mnt/zeebe
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9600
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9600
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: zeebe-storage
+          persistentVolumeClaim:
+            claimName: zeebe-pvc
+---
+# Headless service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: zeebe-headless
+  namespace: eclaims
+spec:
+  clusterIP: None
+  selector:
+    app: zeebe
+  ports:
+    - port: 26502
+      name: internal-api
+    - port: 26501
+      name: command-api
+---
+# Main service — clients connect to zeebe-service:26500
+apiVersion: v1
+kind: Service
+metadata:
+  name: zeebe-service
+  namespace: eclaims
+spec:
+  selector:
+    app: zeebe
+  ports:
+    - port: 26500
+      targetPort: 26500
+      name: gateway-grpc
+    - port: 9600
+      targetPort: 9600
+      name: monitoring

@@ -51,10 +51,10 @@
     <!-- Boundary Timer: 72h escalation on surveyor task -->
     <bpmn:boundaryEvent id="Timer_SurveyorEscalation" attachedToRef="Task_SurveyorAssessment"
                         cancelActivity="false" name="72h Escalation">
+      <bpmn:outgoing>Flow_to_EscalateSurveyor</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerDef_Surveyor">
         <bpmn:timeDuration>PT72H</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
-      <bpmn:outgoing>Flow_to_EscalateSurveyor</bpmn:outgoing>
     </bpmn:boundaryEvent>
 
     <!-- TASK: Escalate Surveyor -->
@@ -85,10 +85,10 @@
     <!-- Boundary Timer: 48h escalation on adjustor task -->
     <bpmn:boundaryEvent id="Timer_AdjustorEscalation" attachedToRef="Task_AdjustorReview"
                         cancelActivity="false" name="48h Escalation">
+      <bpmn:outgoing>Flow_to_EscalateAdjustor</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerDef_Adjustor">
         <bpmn:timeDuration>PT48H</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
-      <bpmn:outgoing>Flow_to_EscalateAdjustor</bpmn:outgoing>
     </bpmn:boundaryEvent>
 
     <!-- TASK: Escalate Adjustor -->
