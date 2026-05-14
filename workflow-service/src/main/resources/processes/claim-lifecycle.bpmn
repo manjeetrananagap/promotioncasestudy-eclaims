@@ -66,7 +66,7 @@
     </bpmn:serviceTask>
 
     <!-- GATEWAY: Assessment submitted? -->
-    <bpmn:exclusiveGateway id="Gateway_AssessmentSubmitted" name="Assessment Valid?">
+    <bpmn:exclusiveGateway id="Gateway_AssessmentSubmitted" name="Assessment Valid?" default="Flow_AssessmentInvalid">
       <bpmn:incoming>Flow_to_SurveyorGateway</bpmn:incoming>
       <bpmn:outgoing>Flow_AssessmentValid</bpmn:outgoing>
       <bpmn:outgoing>Flow_AssessmentInvalid</bpmn:outgoing>
@@ -100,7 +100,7 @@
     </bpmn:serviceTask>
 
     <!-- GATEWAY: Approved or Rejected? -->
-    <bpmn:exclusiveGateway id="Gateway_ApprovalDecision" name="Claim Approved?">
+    <bpmn:exclusiveGateway id="Gateway_ApprovalDecision" name="Claim Approved?" default="Flow_ClaimRejected">
       <bpmn:incoming>Flow_to_ApprovalGateway</bpmn:incoming>
       <bpmn:outgoing>Flow_ClaimApproved</bpmn:outgoing>
       <bpmn:outgoing>Flow_ClaimRejected</bpmn:outgoing>
