@@ -33,6 +33,12 @@ resource "google_compute_subnetwork" "eclaims_subnet" {
     range_name    = "gke-services"
     ip_cidr_range = "10.102.0.0/20"
   }
+
+  # Autopilot may add/reshape secondary ranges; do not force destructive updates
+  # once the subnet is attached to a running cluster.
+  lifecycle {
+    ignore_changes = [secondary_ip_range]
+  }
 }
 
 # ── Private Service Access for Cloud SQL (RFC 1918 peering) ──────────────────

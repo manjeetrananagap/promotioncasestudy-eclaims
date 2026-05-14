@@ -97,6 +97,9 @@ resource "google_service_account_iam_member" "eclaims_workload_identity" {
   service_account_id = google_service_account.eclaims_workload.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[eclaims/eclaims-sa]"
+
+  # Identity pool `${project}.svc.id.goog` is created by GKE cluster creation.
+  depends_on = [google_container_cluster.eclaims]
 }
 
 output "workload_sa_email" {

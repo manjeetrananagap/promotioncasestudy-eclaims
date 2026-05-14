@@ -1,0 +1,82 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-api-gateway-to-services
+  namespace: eclaims-prod
+spec:
+  selector:
+    matchLabels:
+      app: claims-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/eclaims-prod/sa/api-gateway"
+      to:
+        - operation:
+            methods: ["GET", "POST", "PUT", "PATCH"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-api-gateway-to-partner
+  namespace: eclaims-prod
+spec:
+  selector:
+    matchLabels:
+      app: partner-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/eclaims-prod/sa/api-gateway"
+              - "cluster.local/ns/eclaims-prod/sa/claims-service"
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-claims-to-downstream
+  namespace: eclaims-prod
+spec:
+  selector:
+    matchLabels:
+      app: notification-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/eclaims-prod/sa/claims-service"
+              - "cluster.local/ns/eclaims-prod/sa/workflow-service"
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-claims-to-documents
+  namespace: eclaims-prod
+spec:
+  selector:
+    matchLabels:
+      app: document-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/eclaims-prod/sa/api-gateway"
+              - "cluster.local/ns/eclaims-prod/sa/claims-service"
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-default
+  namespace: eclaims-prod
+spec:
+  action: DENY
+  rules:
+    - {}

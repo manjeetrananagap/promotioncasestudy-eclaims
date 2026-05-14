@@ -11,6 +11,7 @@ import com.nagarro.eclaims.partner.repository.WorkshopRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -101,6 +102,13 @@ public class PartnerService {
         surveyorRepository.assignSurveyor(selected.getId());
 
         // Publish event — Notification Service sends email/SMS to customer and surveyor
+        int etaMinutes = geoService.getEtaMinutes(
+                selected.getBaseLat().doubleValue(), selected.getBaseLng().doubleValue(),
+                lat, lng);
+        String etaDisplay = etaMinutes < 60
+                ? etaMinutes + " minutes"
+                : (etaMinutes / 60) + "h " + (etaMinutes % 60) + "m";
+
         SurveyorAssignedEvent assignedEvent = SurveyorAssignedEvent.builder()
                 .eventId(UUID.randomUUID().toString())
                 .occurredAt(LocalDateTime.now())
@@ -111,7 +119,7 @@ public class PartnerService {
                 .surveyorName(selected.getName())
                 .surveyorEmail(selected.getEmail())
                 .surveyorPhone(selected.getPhone())
-                .estimatedArrival("Within " + Math.max(1, (int)(distKm / 30 * 60)) + " minutes")
+                .estimatedArrival("Within " + etaDisplay)
                 .mapsNavigationLink(geoService.buildMapsLink(lat, lng))
                 .build();
 
@@ -133,6 +141,7 @@ public class PartnerService {
      * Results are filtered: active, valid certification, capacity available.
      */
     @Transactional(readOnly = true)
+    @Cacheable(value = "geo-workshops", key = "#lat.toPlainString() + ',' + #lng.toPlainString()")
     public List<WorkshopDto> findNearbyWorkshops(BigDecimal lat, BigDecimal lng) {
         double latD = lat.doubleValue();
         double lngD = lng.doubleValue();

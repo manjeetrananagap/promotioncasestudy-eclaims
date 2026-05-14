@@ -33,6 +33,22 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
 
+  # Redis Memorystore — claim status + lookup caching (reduces Cloud SQL load at peak)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000  # 5 minutes TTL for claim status cache
+
   kafka:
     bootstrap-servers: localhost:9092
     producer:
@@ -62,11 +78,17 @@ management:
 
 eclaims:
   kafka.topics:
-    claim-submitted:  claim.submitted
-    claim-validated:  claim.validated
-    claim-approved:   claim.approved
-    claim-closed:     claim.closed
-    audit-events:     audit.events
+    claim-submitted:    claim.submitted
+    claim-validated:    claim.validated
+    claim-approved:     claim.approved
+    claim-closed:       claim.closed
+    payment-processed:  payment.processed
+    audit-events:       audit.events
+
+  stripe:
+    # Set STRIPE_ENABLED=true and STRIPE_SECRET_KEY in production / GCP Secret Manager
+    enabled: ${STRIPE_ENABLED:false}
+    secret-key: ${STRIPE_SECRET_KEY:}
 
 logging:
   level:

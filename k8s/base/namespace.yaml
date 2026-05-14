@@ -5,6 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: argocd
     team: eclaims
+    istio-injection: "enabled"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -17,3 +18,8 @@ data:
   KEYCLOAK_ISSUER_URI: "http://keycloak-service:8080/realms/eclaims"
   MINIO_ENDPOINT: "http://minio-service:9000"
   ZEEBE_GATEWAY_ADDRESS: "zeebe-service:26500"
+  REDIS_HOST: "redis-service:6379"
+  REDIS_PORT: "6379"
+  STRIPE_ENABLED: "false"
+  GOOGLE_MAPS_ENABLED: "false"
+  TWILIO_ENABLED: "false"

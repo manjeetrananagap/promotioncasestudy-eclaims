@@ -1,0 +1,61 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: eclaims-staging
+
+resources:
+  - ../../base
+
+# Image tag substitution — CI/CD injects actual tag
+images:
+  - name: REGISTRY/eclaims/claims-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/claims-service
+    newTag: latest
+  - name: REGISTRY/eclaims/notification-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/notification-service
+    newTag: latest
+  - name: REGISTRY/eclaims/document-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/document-service
+    newTag: latest
+  - name: REGISTRY/eclaims/partner-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/partner-service
+    newTag: latest
+  - name: REGISTRY/eclaims/workflow-service
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/workflow-service
+    newTag: latest
+  - name: REGISTRY/eclaims/api-gateway
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/api-gateway
+    newTag: latest
+  - name: REGISTRY/eclaims/frontend
+    newName: us-central1-docker.pkg.dev/PROJECT_ID/eclaims/frontend
+    newTag: latest
+
+patches:
+  # 2 replicas for all deployments in staging
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+    target:
+      kind: Deployment
+
+  # Staging-specific environment overrides
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: SPRING_PROFILES_ACTIVE
+            value: staging
+    target:
+      kind: Deployment
+      labelSelector: "app in (claims-service,partner-service,notification-service,document-service,workflow-service,api-gateway)"
+
+configMapGenerator:
+  - name: eclaims-staging-config
+    namespace: eclaims-staging
+    literals:
+      - ENVIRONMENT=staging
+      - LOG_LEVEL=DEBUG
+      - STRIPE_ENABLED=false
+      - GOOGLE_MAPS_ENABLED=false
+      - TWILIO_ENABLED=false

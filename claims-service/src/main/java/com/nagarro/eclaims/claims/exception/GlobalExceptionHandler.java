@@ -2,6 +2,7 @@ package com.nagarro.eclaims.claims.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -42,6 +43,14 @@ public class GlobalExceptionHandler {
         pd.setType(URI.create("https://eclaims.yourdomain.com/errors/validation"));
         pd.setProperty("timestamp", Instant.now());
         pd.setProperty("fieldErrors", errors);
+        return pd;
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail forbidden(AccessDeniedException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access denied");
+        pd.setType(URI.create("https://eclaims.yourdomain.com/errors/forbidden"));
+        pd.setProperty("timestamp", Instant.now());
         return pd;
     }
 

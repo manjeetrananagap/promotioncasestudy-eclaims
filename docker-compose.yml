@@ -226,6 +226,21 @@ services:
       - "8025:8025"   # Web UI
     networks: [eclaims-net]
 
+  # ── Redis (Cloud Memorystore equivalent for local dev) ────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: eclaims-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [eclaims-net]
+
   # ── Camunda 8 / Zeebe (Workflow Engine) ───────────────────────────────────
   zeebe:
     image: camunda/zeebe:8.4.0
@@ -333,10 +348,16 @@ services:
       SPRING_DATASOURCE_PASSWORD: eclaims_pass
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/eclaims
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      STRIPE_ENABLED: "false"
+      STRIPE_SECRET_KEY: ""
     depends_on:
       postgres:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       keycloak:
         condition: service_healthy
@@ -364,6 +385,10 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SPRING_MAIL_HOST: mailhog
       SPRING_MAIL_PORT: 1025
+      TWILIO_ENABLED: "false"
+      TWILIO_ACCOUNT_SID: ""
+      TWILIO_AUTH_TOKEN: ""
+      TWILIO_FROM_NUMBER: ""
     depends_on:
       postgres:
         condition: service_healthy
@@ -411,10 +436,16 @@ services:
       SPRING_DATASOURCE_USERNAME: eclaims
       SPRING_DATASOURCE_PASSWORD: eclaims_pass
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      GOOGLE_MAPS_ENABLED: "false"
+      GOOGLE_MAPS_API_KEY: ""
     depends_on:
       postgres:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks: [eclaims-net]
     profiles: [apps]

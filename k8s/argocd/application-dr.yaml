@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eclaims-dr
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/description: "eClaims DR overlay — us-east1 failover cluster"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/YOUR_ORG/eclaims-poc.git
+    targetRevision: main
+    path: k8s/overlays/prod   # reuse prod overlay; DR cluster has same config
+  destination:
+    server: https://DR_CLUSTER_API_ENDPOINT
+    namespace: eclaims-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground

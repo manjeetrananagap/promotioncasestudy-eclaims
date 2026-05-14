@@ -1,0 +1,37 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.cache.CacheAutoConfiguration
+  datasource:
+    url: jdbc:h2:mem:partnerdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  kafka:
+    bootstrap-servers: localhost:9092
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost/realms/eclaims
+
+eclaims:
+  kafka:
+    topics:
+      surveyor-assigned: surveyor.assigned
+      workshop-assigned: workshop.assigned
+      repair-status-updated: repair.status.updated
+      repair-completed: repair.completed
+  geo:
+    surveyor-radius-km: 25
+    surveyor-max-radius-km: 50
+    workshop-radius-km: 30
+  google-maps:
+    enabled: false
+    api-key: ""

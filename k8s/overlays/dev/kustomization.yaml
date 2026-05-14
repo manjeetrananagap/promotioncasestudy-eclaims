@@ -16,7 +16,6 @@ patches:
     target:
       kind: Deployment
 
-patches:
   # Workload Identity — bind eclaims-sa K8s SA to the GCP service account
   - patch: |-
       apiVersion: v1

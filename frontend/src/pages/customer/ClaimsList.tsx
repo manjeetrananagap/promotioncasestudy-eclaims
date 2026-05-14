@@ -1,7 +1,3 @@
-// src/pages/adjustor/Claims.tsx
-export { default } from './Dashboard';
-
-// src/pages/customer/ClaimsList.tsx
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';

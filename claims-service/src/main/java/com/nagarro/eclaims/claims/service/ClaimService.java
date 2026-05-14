@@ -10,9 +10,12 @@ import com.nagarro.eclaims.claims.repository.ClaimRepository;
 import com.nagarro.eclaims.events.ClaimApprovedEvent;
 import com.nagarro.eclaims.events.ClaimSubmittedEvent;
 import com.nagarro.eclaims.events.ClaimValidatedEvent;
+import com.nagarro.eclaims.events.PaymentProcessedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,11 +44,13 @@ public class ClaimService {
     private final ClaimRepository   claimRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final JdbcTemplate      jdbcTemplate;
+    private final StripePaymentService stripePaymentService;
 
     @Value("${eclaims.kafka.topics.claim-submitted}")  private String topicSubmitted;
     @Value("${eclaims.kafka.topics.claim-validated}")  private String topicValidated;
     @Value("${eclaims.kafka.topics.claim-approved}")   private String topicApproved;
     @Value("${eclaims.kafka.topics.claim-closed}")     private String topicClosed;
+    @Value("${eclaims.kafka.topics.payment-processed:payment.processed}") private String topicPayment;
 
     // ── Submit FNOL ──────────────────────────────────────────────────────────
 
@@ -181,6 +186,7 @@ public class ClaimService {
     // ── Update status (called by downstream services) ─────────────────────────
 
     @Transactional
+    @CacheEvict(value = "claims", key = "#claimId")
     public ClaimResponse updateStatus(UUID claimId, ClaimStatus newStatus,
                                       String changedBy, String note, String source) {
         Claim claim = getClaimEntityById(claimId);
@@ -188,9 +194,66 @@ public class ClaimService {
         return ClaimResponse.fromEntity(claimRepository.save(claim));
     }
 
+    // ── Process Payment (Stripe) ──────────────────────────────────────────────
+
+    /**
+     * Initiates electronic payment settlement via Stripe.
+     * Transitions claim to PAYMENT_PENDING → CLOSED and publishes payment.processed event.
+     *
+     * Card details never reach this service — Stripe.js tokenises them on the frontend.
+     * PCI-DSS Level 1 compliance is handled entirely by Stripe.
+     *
+     * @param claimId        claim to settle
+     * @param customerEmail  Stripe receipt destination
+     * @param customerPhone  for SMS notification
+     * @param settledBy      actor name (adjustor / system)
+     * @return Stripe PaymentIntent client_secret for frontend to complete confirmation
+     */
+    @Transactional
+    public String processPayment(UUID claimId, String customerEmail,
+                                  String customerPhone, String settledBy) {
+        Claim claim = getClaimEntityById(claimId);
+
+        if (claim.getStatus() != ClaimStatus.REPAIR_COMPLETED
+                && claim.getStatus() != ClaimStatus.APPROVED) {
+            throw new InvalidStatusTransitionException(
+                    "Claim must be REPAIR_COMPLETED or APPROVED to process payment. Current: "
+                    + claim.getStatus());
+        }
+
+        // Stripe: create a PaymentIntent for the insurer contribution
+        String clientSecret = stripePaymentService.createPaymentIntent(
+                claimId, claim.getClaimNumber(),
+                claim.getInsurerContribution(), customerEmail);
+
+        // Transition claim to PAYMENT_PENDING
+        claim.transitionTo(ClaimStatus.PAYMENT_PENDING, settledBy, "Payment initiated via Stripe", "REST_API");
+        claimRepository.save(claim);
+
+        // Publish payment.processed event — consumed by Notification, Workflow, Document, Reporting
+        kafkaTemplate.send(topicPayment, claimId.toString(),
+            PaymentProcessedEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .occurredAt(java.time.LocalDateTime.now())
+                .claimId(claimId)
+                .claimNumber(claim.getClaimNumber())
+                .policyHolderEmail(customerEmail)
+                .policyHolderPhone(customerPhone)
+                .customerAmountPaid(claim.getCustomerContribution())
+                .insurerAmountPaid(claim.getInsurerContribution())
+                .transactionReference(clientSecret != null
+                        ? clientSecret.split("_secret_")[0] : "SIMULATED")
+                .paymentMethod("CARD")
+                .build());
+
+        log.info("Payment initiated — claimId:{} amount:₹{}", claimId, claim.getInsurerContribution());
+        return clientSecret;
+    }
+
     // ── Reads ─────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "claims", key = "#id")
     public ClaimResponse getById(UUID id) {
         return ClaimResponse.fromEntity(
             claimRepository.findByIdWithHistory(id)

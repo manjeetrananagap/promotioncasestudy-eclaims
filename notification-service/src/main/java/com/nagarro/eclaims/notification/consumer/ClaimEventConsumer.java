@@ -2,6 +2,7 @@ package com.nagarro.eclaims.notification.consumer;
 
 import com.nagarro.eclaims.events.*;
 import com.nagarro.eclaims.notification.service.NotificationService;
+import com.nagarro.eclaims.notification.service.SmsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Component;
 public class ClaimEventConsumer {
 
     private final NotificationService notificationService;
+    private final SmsService smsService;
 
     /** claim.submitted — sent to customer confirming receipt */
     @KafkaListener(topics = "claim.submitted", groupId = "notification-service-group",
@@ -38,6 +40,16 @@ public class ClaimEventConsumer {
             event.getPolicyHolderEmail(),
             "Claim Received — " + event.getClaimNumber(),
             buildClaimSubmittedBody(event)
+        );
+
+        // SMS: brief confirmation to customer phone
+        smsService.sendSms(
+            event.getEventId(),
+            event.getClaimId(),
+            "claim.submitted",
+            event.getPolicyHolderPhone(),
+            "eClaims: Your claim " + event.getClaimNumber() + " has been received. " +
+            "Track at eclaims.yourdomain.com"
         );
     }
 
@@ -55,6 +67,16 @@ public class ClaimEventConsumer {
             "Surveyor Assigned — " + event.getClaimNumber(),
             buildSurveyorAssignedBody(event)
         );
+
+        // SMS: surveyor ETA alert
+        smsService.sendSms(
+            event.getEventId(),
+            event.getClaimId(),
+            "surveyor.assigned",
+            event.getPolicyHolderPhone(),
+            "eClaims: Surveyor " + event.getSurveyorName() + " assigned to claim " +
+            event.getClaimNumber() + ". ETA: " + event.getEstimatedArrival()
+        );
     }
 
     /** claim.approved — sent to customer with approved amount */
@@ -70,6 +92,16 @@ public class ClaimEventConsumer {
             event.getPolicyHolderEmail(),
             "Claim Approved — " + event.getClaimNumber(),
             buildClaimApprovedBody(event)
+        );
+
+        // SMS: approval alert with amount
+        smsService.sendSms(
+            event.getEventId(),
+            event.getClaimId(),
+            "claim.approved",
+            event.getPolicyHolderPhone(),
+            "eClaims: Claim " + event.getClaimNumber() + " APPROVED for Rs." +
+            event.getApprovedAmount() + ". Login to select a workshop."
         );
     }
 

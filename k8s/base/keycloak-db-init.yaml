@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-db-init
+  namespace: eclaims
+spec:
+  template:
+    spec:
+      containers:
+      - name: db-init
+        image: postgres:15-alpine
+        command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Creating keycloak_db..."
+            PGPASSWORD=$DB_PASSWORD psql -h postgres-service -U eclaims -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='keycloak_db'" | grep -q 1 || PGPASSWORD=$DB_PASSWORD psql -h postgres-service -U eclaims -d postgres -c "CREATE DATABASE keycloak_db;"
+            echo "Database creation completed"
+        env:
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: eclaims-db-secret
+                key: password
+      restartPolicy: Never
+  backoffLimit: 3

@@ -1,0 +1,64 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: claims-service
+  namespace: eclaims-prod
+spec:
+  hosts:
+    - claims-service
+  http:
+    - match:
+        - headers:
+            x-canary:
+              exact: "true"
+      route:
+        - destination:
+            host: claims-service
+            subset: canary
+    - route:
+        - destination:
+            host: claims-service
+            subset: stable
+          weight: 95
+        - destination:
+            host: claims-service
+            subset: canary
+          weight: 5
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: "5xx,reset,connect-failure"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: partner-service
+  namespace: eclaims-prod
+spec:
+  hosts:
+    - partner-service
+  http:
+    - route:
+        - destination:
+            host: partner-service
+            subset: stable
+      timeout: 3s
+      retries:
+        attempts: 3
+        perTryTimeout: 1s
+        retryOn: "5xx,reset,connect-failure"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: document-service
+  namespace: eclaims-prod
+spec:
+  hosts:
+    - document-service
+  http:
+    - route:
+        - destination:
+            host: document-service
+            subset: stable
+      timeout: 30s

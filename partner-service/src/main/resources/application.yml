@@ -29,6 +29,22 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
 
+  # Redis Memorystore — geo-search result caching (reduces DB load for repeated area queries)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 120000  # 2 minutes TTL for geo-search results
+
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
@@ -60,6 +76,10 @@ eclaims:
     surveyor-radius-km: 25     # Initial search radius for surveyors
     surveyor-max-radius-km: 50 # Auto-expand radius if no surveyor found
     workshop-radius-km: 30     # Search radius for workshops
+  google-maps:
+    # Set GOOGLE_MAPS_ENABLED=true and GOOGLE_MAPS_API_KEY in production / GCP Secret Manager
+    enabled: ${GOOGLE_MAPS_ENABLED:false}
+    api-key: ${GOOGLE_MAPS_API_KEY:}
   kafka.topics:
     surveyor-assigned: surveyor.assigned
     workshop-assigned: workshop.assigned

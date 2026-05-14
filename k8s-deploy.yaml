@@ -1,0 +1,697 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    istio-injection: enabled
+    team: eclaims
+  name: eclaims
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    iam.gke.io/gcp-service-account: eclaims-workload@eclaims-promotioncasestudy.iam.gserviceaccount.com
+  name: eclaims-sa
+  namespace: eclaims
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eclaims-role
+  namespace: eclaims
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eclaims-rolebinding
+  namespace: eclaims
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eclaims-role
+subjects:
+- kind: ServiceAccount
+  name: eclaims-sa
+  namespace: eclaims
+---
+apiVersion: v1
+data:
+  GOOGLE_MAPS_ENABLED: "false"
+  KEYCLOAK_ISSUER_URI: http://keycloak-service:8080/realms/eclaims
+  MINIO_ENDPOINT: http://minio-service:9000
+  REDIS_HOST: 10.0.0.4
+  REDIS_PORT: "6379"
+  SPRING_DATASOURCE_USERNAME: eclaims
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka-service:9092
+  STRIPE_ENABLED: "false"
+  TWILIO_ENABLED: "false"
+  ZEEBE_GATEWAY_ADDRESS: zeebe-service:26500
+kind: ConfigMap
+metadata:
+  name: eclaims-config
+  namespace: eclaims
+---
+apiVersion: v1
+data:
+  password: ZUosWT5sa1goezBeUXxWQzJSYzxiNVtd
+kind: Secret
+metadata:
+  name: eclaims-db-secret
+  namespace: eclaims
+type: Opaque
+---
+apiVersion: v1
+data:
+  access-key: bWluaW9hZG1pbg==
+  secret-key: bWluaW9hZG1pbjEyMw==
+kind: Secret
+metadata:
+  name: eclaims-minio-secret
+  namespace: eclaims
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: eclaims
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: api-gateway
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: claims-service
+  name: claims-service
+  namespace: eclaims
+spec:
+  ports:
+  - name: http
+    port: 8081
+    targetPort: 8081
+  selector:
+    app: claims-service
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-service
+  namespace: eclaims
+spec:
+  ports:
+  - port: 8083
+    targetPort: 8083
+  selector:
+    app: document-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: eclaims
+spec:
+  ports:
+  - port: 3000
+    targetPort: 3000
+  selector:
+    app: frontend
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: eclaims
+spec:
+  ports:
+  - port: 8082
+    targetPort: 8082
+  selector:
+    app: notification-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: partner-service
+  namespace: eclaims
+spec:
+  ports:
+  - port: 8084
+    targetPort: 8084
+  selector:
+    app: partner-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: cloud-sql-proxy
+  name: postgres-service
+  namespace: eclaims
+spec:
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432
+  selector:
+    app: cloud-sql-proxy
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflow-service
+  namespace: eclaims
+spec:
+  ports:
+  - port: 8085
+    targetPort: 8085
+  selector:
+    app: workflow-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: api-gateway
+  name: api-gateway
+  namespace: eclaims
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "8080"
+        prometheus.io/scrape: "true"
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: eclaims-config
+        image: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/api-gateway:latest
+        name: api-gateway
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 200m
+            memory: 512Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: claims-service
+    version: v1
+  name: claims-service
+  namespace: eclaims
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: claims-service
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8081"
+        prometheus.io/scrape: "true"
+      labels:
+        app: claims-service
+        version: v1
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://postgres-service:5432/claims_db
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: eclaims-db-secret
+        envFrom:
+        - configMapRef:
+            name: eclaims-config
+        image: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/claims-service:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /api/v1/actuator/health/liveness
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 20
+        name: claims-service
+        ports:
+        - containerPort: 8081
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /api/v1/actuator/health/readiness
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 250m
+            memory: 512Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      serviceAccountName: eclaims-sa
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: cloud-sql-proxy
+  name: cloud-sql-proxy
+  namespace: eclaims
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloud-sql-proxy
+  template:
+    metadata:
+      labels:
+        app: cloud-sql-proxy
+    spec:
+      containers:
+      - args:
+        - --structured-logs
+        - --address=0.0.0.0
+        - --private-ip
+        - --port=5432
+        - eclaims-promotioncasestudy:us-central1:eclaims-postgres
+        image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.4
+        livenessProbe:
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          tcpSocket:
+            port: 5432
+        name: cloud-sql-proxy
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          tcpSocket:
+            port: 5432
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+      serviceAccountName: eclaims-sa
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: document-service
+  name: document-service
+  namespace: eclaims
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: document-service
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "8083"
+        prometheus.io/scrape: "true"
+      labels:
+        app: document-service
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://postgres-service:5432/document_db
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: eclaims-db-secret
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: access-key
+              name: eclaims-minio-secret
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-key
+              name: eclaims-minio-secret
+        envFrom:
+        - configMapRef:
+            name: eclaims-config
+        image: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/document-service:latest
+        name: document-service
+        ports:
+        - containerPort: 8083
+        readinessProbe:
+          httpGet:
+            path: /api/v1/actuator/health/readiness
+            port: 8083
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 200m
+            memory: 512Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: frontend
+  name: frontend
+  namespace: eclaims
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - image: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/frontend:latest
+        name: frontend
+        ports:
+        - containerPort: 3000
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: notification-service
+  name: notification-service
+  namespace: eclaims
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "8082"
+        prometheus.io/scrape: "true"
+      labels:
+        app: notification-service
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://postgres-service:5432/notification_db
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: eclaims-db-secret
+        envFrom:
+        - configMapRef:
+            name: eclaims-config
+        image: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/notification-service:latest
+        name: notification-service
+        ports:
+        - containerPort: 8082
+        readinessProbe:
+          httpGet:
+            path: /api/v1/actuator/health/readiness
+            port: 8082
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: partner-service
+  name: partner-service
+  namespace: eclaims
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: partner-service
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "8084"
+        prometheus.io/scrape: "true"
+      labels:
+        app: partner-service
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://postgres-service:5432/partner_db
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: eclaims-db-secret
+        envFrom:
+        - configMapRef:
+            name: eclaims-config
+        image: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/partner-service:latest
+        name: partner-service
+        ports:
+        - containerPort: 8084
+        readinessProbe:
+          httpGet:
+            path: /api/v1/actuator/health/readiness
+            port: 8084
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 250m
+            memory: 512Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: workflow-service
+  name: workflow-service
+  namespace: eclaims
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workflow-service
+  template:
+    metadata:
+      labels:
+        app: workflow-service
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://postgres-service:5432/workflow_db
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: eclaims-db-secret
+        envFrom:
+        - configMapRef:
+            name: eclaims-config
+        image: us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/workflow-service:latest
+        name: workflow-service
+        ports:
+        - containerPort: 8085
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8085
+          initialDelaySeconds: 45
+          periodSeconds: 15
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 250m
+            memory: 512Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: claims-service-hpa
+  namespace: eclaims
+spec:
+  maxReplicas: 10
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  - resource:
+      name: memory
+      target:
+        averageUtilization: 80
+        type: Utilization
+    type: Resource
+  minReplicas: 2
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: claims-service
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: eclaims-ssl-cert
+  namespace: eclaims
+spec:
+  domains:
+  - eclaims.yourdomain.com
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: eclaims-frontend-config
+  namespace: eclaims
+spec:
+  redirectToHttps:
+    enabled: true
+  sslPolicy: eclaims-ssl-policy
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.allow-http: "false"
+    kubernetes.io/ingress.class: gce
+    networking.gke.io/managed-certificates: eclaims-ssl-cert
+    networking.gke.io/v1beta1.FrontendConfig: eclaims-frontend-config
+  name: eclaims-ingress
+  namespace: eclaims
+spec:
+  rules:
+  - host: eclaims.yourdomain.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: api-gateway
+            port:
+              number: 8080
+        path: /api
+        pathType: Prefix
+      - backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+        path: /
+        pathType: Prefix

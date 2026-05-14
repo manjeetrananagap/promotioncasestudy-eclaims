@@ -4,8 +4,11 @@ RUN addgroup -S eclaims && adduser -S eclaims -G eclaims
 WORKDIR /app
 
 # Copy pre-built JAR from Maven build step
-COPY target/*.jar app.jar
-RUN chown eclaims:eclaims app.jar
+COPY target/*.jar /tmp/jars/
+RUN set -eux; \
+  JAR="$(ls /tmp/jars/*.jar | grep -v 'original' | head -n 1)"; \
+  cp "$JAR" /app/app.jar; \
+  chown eclaims:eclaims /app/app.jar
 USER eclaims
 EXPOSE 8082
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

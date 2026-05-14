@@ -317,6 +317,13 @@ spec:
           image: REGISTRY/eclaims/frontend:IMAGE_TAG
           ports:
             - containerPort: 3000
+          env:
+            - name: REACT_APP_KEYCLOAK_URL
+              value: "http://34.36.33.207/auth"
+            - name: REACT_APP_KEYCLOAK_REALM
+              value: "eclaims"
+            - name: REACT_APP_KEYCLOAK_CLIENT
+              value: "eclaims-frontend"
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits:   { cpu: 200m, memory: 256Mi }
@@ -336,4 +343,95 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: eclaims
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:23.0.6
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KC_DB
+              value: "postgres"
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://postgres-service:5432/keycloak_db"
+            - name: KC_DB_USERNAME
+              value: "eclaims"
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eclaims-db-secret
+                  key: password
+            - name: KEYCLOAK_ADMIN
+              value: "admin"
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eclaims-keycloak-secret
+                  key: admin-password
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_HTTP_RELATIVE_PATH
+              value: "/auth"
+          args:
+            - start-dev
+            - --import-realm
+          volumeMounts:
+            - name: realm-export
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits:   { cpu: 1000m, memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /auth/health/ready, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /auth/health/live, port: 8080 }
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+      volumes:
+        - name: realm-export
+          configMap:
+            name: keycloak-realm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-service
+  namespace: eclaims
+  annotations:
+    cloud.google.com/backend-config: '{"default": "keycloak-backendconfig"}'
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - port: 8080
+      targetPort: 8080
   type: ClusterIP

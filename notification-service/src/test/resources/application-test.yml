@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:notificationdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  kafka:
+    bootstrap-servers: localhost:9092
+  mail:
+    host: localhost
+    port: 1025
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost/realms/eclaims
+
+eclaims:
+  twilio:
+    enabled: false
+    account-sid: ""
+    auth-token: ""
+    from-number: ""
+  mail:
+    from: noreply@eclaims.test
+    from-name: eClaims Test

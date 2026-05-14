@@ -1,0 +1,13 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/frontend:latest'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/frontend:v1'
+      - './frontend/'
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', 'us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/frontend']
+images:
+  - 'us-central1-docker.pkg.dev/eclaims-promotioncasestudy/eclaims/frontend:latest'

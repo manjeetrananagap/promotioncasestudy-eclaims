@@ -1,5 +1,6 @@
 // src/pages/customer/Dashboard.tsx
 import React from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { claimsApi, Claim } from '../../services/api';

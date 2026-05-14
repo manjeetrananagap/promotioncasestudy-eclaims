@@ -1,0 +1,40 @@
+spring:
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  # Disable Redis autoconfiguration for unit/slice tests
+  # (@WebMvcTest and @ExtendWith(MockitoExtension) do not start the full context)
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.cache.CacheAutoConfiguration
+  # Use H2-compatible no-op datasource for slice tests that don't use @DynamicPropertySource
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  kafka:
+    bootstrap-servers: localhost:9092
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost/realms/eclaims
+
+eclaims:
+  kafka:
+    topics:
+      claim-submitted: claim.submitted
+      claim-validated: claim.validated
+      claim-approved: claim.approved
+      claim-closed: claim.closed
+      payment-processed: payment.processed
+  stripe:
+    enabled: false
+    secret-key: ""

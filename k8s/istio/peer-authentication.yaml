@@ -1,0 +1,17 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: eclaims-mtls
+  namespace: eclaims-prod
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: eclaims-mtls
+  namespace: eclaims-staging
+spec:
+  mtls:
+    mode: PERMISSIVE   # allow non-mTLS during canary rollout

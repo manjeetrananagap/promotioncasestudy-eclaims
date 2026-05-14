@@ -57,3 +57,9 @@ coverage/
 
 # K8s secrets (never commit actual values)
 k8s/**/secrets-actual.yaml
+
+# Terraform provider cache & state (large binaries, sensitive state)
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/errored.tfstate

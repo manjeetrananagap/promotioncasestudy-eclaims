@@ -1,33 +1,16 @@
-# ── Stage 1: Build ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install deps first (better layer caching)
-COPY package.json package-lock.json* ./
-RUN npm ci --silent
+COPY package.json ./
+RUN npm install --legacy-peer-deps --silent
 
-# Build
 COPY . .
-ARG REACT_APP_API_URL=http://localhost:8080
-ARG REACT_APP_KEYCLOAK_URL=http://localhost:8180
-ARG REACT_APP_KEYCLOAK_REALM=eclaims
-ARG REACT_APP_KEYCLOAK_CLIENT=eclaims-frontend
+RUN node ./node_modules/react-scripts/bin/react-scripts.js build
 
-ENV REACT_APP_API_URL=$REACT_APP_API_URL
-ENV REACT_APP_KEYCLOAK_URL=$REACT_APP_KEYCLOAK_URL
-ENV REACT_APP_KEYCLOAK_REALM=$REACT_APP_KEYCLOAK_REALM
-ENV REACT_APP_KEYCLOAK_CLIENT=$REACT_APP_KEYCLOAK_CLIENT
+FROM nginx:1.25-alpine
 
-RUN npm run build
-
-# ── Stage 2: Serve with Nginx ────────────────────────────────────────────────
-FROM nginx:1.25-alpine AS runtime
-
-# Copy built assets
 COPY --from=builder /app/build /usr/share/nginx/html
-
-# Nginx config for React Router (SPA)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 3000

@@ -59,12 +59,8 @@ spring:
           predicates:
             - Path=/api/v1/notifications/**
 
-      # Rate limiting (default: 10 requests per second)
-      default-filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter.replenishRate: 10
-            redis-rate-limiter.burstCapacity: 20
+      # Rate limiting disabled in current deployment profile because Redis
+      # gateway filter dependencies are not wired in this image build.
 
 management:
   endpoints:

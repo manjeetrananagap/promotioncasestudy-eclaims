@@ -46,12 +46,12 @@ hr()   { echo ""; echo "=== $* ==="; }
 
 # ── 1. Prerequisites ─────────────────────────────────────────────────────────
 hr "Checking prerequisites"
-for cmd in gcloud terraform kubectl kustomize docker; do
+for cmd in gcloud terraform kubectl kustomize; do
   command -v "${cmd}" >/dev/null 2>&1 || die "${cmd} is not installed or not on PATH"
   log "  ${cmd}: OK"
 done
 
-TERRAFORM_VERSION=$(terraform version -json | python3 -c "import sys,json; print(json.load(sys.stdin)['terraform_version'])" 2>/dev/null || terraform version | head -1 | grep -oP '[\d.]+')
+TERRAFORM_VERSION=$(terraform version -json | grep -oE '"terraform_version"\s*:\s*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/' || terraform version | head -1 | grep -oP '[\d.]+')
 log "  terraform ${TERRAFORM_VERSION}"
 
 # ── 2. GCP authentication & project ──────────────────────────────────────────
