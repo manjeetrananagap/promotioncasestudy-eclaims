@@ -62,7 +62,7 @@
 
     <!-- Dependency versions — single source of truth -->
     <mapstruct.version>1.5.5.Final</mapstruct.version>
-    <lombok.version>1.18.30</lombok.version>
+    <lombok.version>1.18.46</lombok.version>
     <minio.version>8.6.0</minio.version>
     <!-- Security: upgrade pgjdbc to fix CVE-2024-1597 (CRITICAL SQL injection) and CVE-2026-42198 (HIGH DoS via SCRAM iterations) -->
     <postgresql.version>42.7.11</postgresql.version>
