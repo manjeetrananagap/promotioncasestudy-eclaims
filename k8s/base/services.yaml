@@ -43,7 +43,7 @@ spec:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 500m, memory: 512Mi }
           readinessProbe:
-            httpGet: { path: /actuator/health/readiness, port: 8082 }
+            httpGet: { path: /api/v1/actuator/health/readiness, port: 8082 }
             initialDelaySeconds: 30
             periodSeconds: 10
 ---
@@ -112,7 +112,7 @@ spec:
             requests: { cpu: 200m, memory: 512Mi }
             limits:   { cpu: 1000m, memory: 1Gi }
           readinessProbe:
-            httpGet: { path: /actuator/health/readiness, port: 8083 }
+            httpGet: { path: /api/v1/actuator/health/readiness, port: 8083 }
             initialDelaySeconds: 30
             periodSeconds: 10
 ---
@@ -171,7 +171,7 @@ spec:
             requests: { cpu: 250m, memory: 512Mi }
             limits:   { cpu: 1000m, memory: 1Gi }
           readinessProbe:
-            httpGet: { path: /actuator/health/readiness, port: 8084 }
+            httpGet: { path: /api/v1/actuator/health/readiness, port: 8084 }
             initialDelaySeconds: 30
             periodSeconds: 10
 ---
