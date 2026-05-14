@@ -45,13 +45,13 @@ data:
             "http://localhost:3000/*",
             "http://localhost:3001/*",
             "http://34.36.33.207/*",
-            "https://34.36.33.207/*"
+            "http://34.36.33.207.nip.io/*"
           ],
           "webOrigins": [
             "http://localhost:3000",
             "http://localhost:3001",
             "http://34.36.33.207",
-            "https://34.36.33.207"
+            "http://34.36.33.207.nip.io"
           ]
         },
         {

@@ -25,8 +25,18 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
-      "redirectUris": ["http://localhost:3000/*", "http://localhost:3001/*"],
-      "webOrigins": ["http://localhost:3000", "http://localhost:3001"]
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:3001/*",
+        "http://34.36.33.207/*",
+        "http://34.36.33.207.nip.io/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://34.36.33.207",
+        "http://34.36.33.207.nip.io"
+      ]
     },
     {
       "clientId": "eclaims-backend",

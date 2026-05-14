@@ -2,7 +2,8 @@
 import axios, { AxiosInstance } from 'axios';
 import keycloak from './keycloak';
 
-const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+const BASE_URL = process.env.REACT_APP_API_URL || runtimeOrigin;
 
 const api: AxiosInstance = axios.create({ baseURL: BASE_URL });
 
