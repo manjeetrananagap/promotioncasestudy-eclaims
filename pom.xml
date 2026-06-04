@@ -61,7 +61,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
     <!-- Dependency versions — single source of truth -->
-    <mapstruct.version>1.5.5.Final</mapstruct.version>
+    <mapstruct.version>1.6.3</mapstruct.version>
     <lombok.version>1.18.30</lombok.version>
     <minio.version>8.6.0</minio.version>
     <!-- Security: upgrade pgjdbc to fix CVE-2024-1597 (CRITICAL SQL injection) and CVE-2026-42198 (HIGH DoS via SCRAM iterations) -->
