@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 RUN addgroup -S eclaims && adduser -S eclaims -G eclaims
 WORKDIR /app
